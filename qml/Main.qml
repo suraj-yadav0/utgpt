@@ -1,37 +1,118 @@
+/*
+ * Main.qml
+ *
+ * Boots the PyOtherSide backend, displays a simple loading and error overlay,
+ * and wires the chat, model download, and settings pages together via tabs.
+ */
+
 import QtQuick 2.7
 import Lomiri.Components 1.3
-//import QtQuick.Controls 2.2
-import QtQuick.Layouts 1.3
-import Qt.labs.settings 1.0
+import Lomiri.Components.Popups 1.3
+import io.thp.pyotherside 1.4
 
 MainView {
     id: root
-    objectName: 'mainView'
-    applicationName: 'utgpt.surajyadav'
+    objectName: "mainView"
+    applicationName: "utgpt.surajyadav"
     automaticOrientation: true
 
     width: units.gu(45)
     height: units.gu(75)
 
-    Page {
-        anchors.fill: parent
+    property bool backendReady: false
+    property string backendError: ""
 
-        header: PageHeader {
-            id: header
-            title: i18n.tr('UTGPT')
+    function showError(message) {
+        backendError = message
+        PopupUtils.open(errorDialogComponent, root, { "message": message })
+    }
+
+    Python {
+        id: python
+
+        onError: function(traceback) {
+            root.showError(traceback)
         }
 
-        Label {
-            anchors {
-                top: header.bottom
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
-            }
-            text: i18n.tr('Hello World!')
+        Component.onCompleted: {
+            addImportPath(Qt.resolvedUrl("../backend"))
+            importModule("backend", function() {
+                python.call("backend.initialize", [], function() {
+                    root.backendReady = true
+                })
+            })
+        }
+    }
 
-            verticalAlignment: Label.AlignVCenter
-            horizontalAlignment: Label.AlignHCenter
+    Component {
+        id: errorDialogComponent
+
+        Dialog {
+            id: dialog
+            property string message: ""
+            title: i18n.tr("Backend Error")
+            text: message
+
+            Button {
+                text: i18n.tr("OK")
+                onClicked: PopupUtils.close(dialog)
+            }
+        }
+    }
+
+    Tabs {
+        id: tabs
+        anchors.fill: parent
+        visible: root.backendReady
+
+        Tab {
+            title: i18n.tr("Chat")
+            page: ChatPage {
+                id: chatPage
+                title: i18n.tr("Chat")
+                python: python
+                model: settingsPage.selectedModel
+                temperature: settingsPage.temperature
+                maxTokens: settingsPage.maxTokens
+            }
+        }
+
+        Tab {
+            title: i18n.tr("Models")
+            page: DownloadPage {
+                title: i18n.tr("Download Models")
+                python: python
+            }
+        }
+
+        Tab {
+            title: i18n.tr("Settings")
+            page: SettingsPage {
+                id: settingsPage
+                title: i18n.tr("Settings")
+                python: python
+                onClearChat: chatPage.clearHistory()
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: !root.backendReady
+        color: "#f5f5f5"
+
+        Column {
+            anchors.centerIn: parent
+            spacing: units.gu(2)
+
+            ActivityIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: !root.backendReady
+            }
+
+            Label {
+                text: i18n.tr("Loading Python backend...")
+            }
         }
     }
 }
