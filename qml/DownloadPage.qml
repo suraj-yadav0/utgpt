@@ -14,6 +14,7 @@ Page {
     title: i18n.tr("Download Models")
 
     property var python
+    property bool backendReady: false
 
     function markReadyModels(downloadedModels) {
         var lookup = {}
@@ -31,7 +32,7 @@ Page {
     }
 
     function refreshDownloadedModels() {
-        python.call("list_models", [], function(result) {
+        python.call("backend.list_models", [], function(result) {
             downloadPage.markReadyModels(result || [])
         })
     }
@@ -45,7 +46,7 @@ Page {
         modelsList.setProperty(index, "ready", false)
         modelsList.setProperty(index, "progress", 0.0)
 
-        python.call("download_model", [item.name, item.url, requestId])
+        python.call("backend.download_model", [item.name, item.url, requestId])
     }
 
     ListModel {
@@ -115,8 +116,8 @@ Page {
         }
     }
 
-    Component.onCompleted: refreshDownloadedModels()
-    onVisibleChanged: if (visible) refreshDownloadedModels()
+    onBackendReadyChanged: if (backendReady) refreshDownloadedModels()
+    onVisibleChanged: if (visible && backendReady) refreshDownloadedModels()
 
     Flickable {
         anchors.fill: parent

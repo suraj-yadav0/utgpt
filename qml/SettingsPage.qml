@@ -15,6 +15,7 @@ Page {
     title: i18n.tr("Settings")
 
     property var python
+    property bool backendReady: false
     property string selectedModel: ""
     property real temperature: 0.7
     property int maxTokens: 200
@@ -24,7 +25,7 @@ Page {
     signal clearChat()
 
     function refreshModels() {
-        python.call("list_models", [], function(result) {
+        python.call("backend.list_models", [], function(result) {
             availableModels = result || []
             if (availableModels.length === 0) {
                 selectedModel = ""
@@ -43,7 +44,7 @@ Page {
     }
 
     function refreshStorage() {
-        python.call("get_free_storage", [], function(result) {
+        python.call("backend.get_free_storage", [], function(result) {
             freeStorage = result || i18n.tr("Storage unavailable")
         })
     }
@@ -56,13 +57,15 @@ Page {
         return Math.round(value / 10) * 10
     }
 
-    Component.onCompleted: {
-        refreshModels()
-        refreshStorage()
+    onBackendReadyChanged: {
+        if (backendReady) {
+            refreshModels()
+            refreshStorage()
+        }
     }
 
     onVisibleChanged: {
-        if (visible) {
+        if (visible && backendReady) {
             refreshModels()
             refreshStorage()
         }
@@ -185,7 +188,7 @@ Page {
             Button {
                 width: parent.width
                 text: i18n.tr("Clear chat history")
-                color: LomiriColors.red
+                color: "#C7162B"
                 onClicked: settingsPage.clearChat()
             }
         }

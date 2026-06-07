@@ -14,6 +14,7 @@ Page {
     title: i18n.tr("Chat")
 
     property var python
+    property bool backendReady: false
     property string model: ""
     property real temperature: 0.7
     property int maxTokens: 200
@@ -84,7 +85,7 @@ Page {
         scrollToBottom()
 
         python.call(
-            "run_inference",
+            "backend.run_inference",
             [model, trimmed, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
@@ -147,7 +148,7 @@ Page {
                     width: Math.min(messageText.implicitWidth + units.gu(4), messageList.width * 0.78)
                     implicitHeight: messageText.implicitHeight + units.gu(2.5)
                     radius: units.gu(1.2)
-                    color: model.role === "user" ? LomiriColors.blue : "#2a2a2a"
+                    color: model.role === "user" ? "#19B6EE" : "#2a2a2a"
 
                     Label {
                         id: messageText

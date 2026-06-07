@@ -42,7 +42,7 @@ MainView {
         Component.onCompleted: {
             addImportPath(Qt.resolvedUrl("../backend"))
             importModule("backend", function() {
-                python.call("initialize", [], function() {
+                python.call("backend.initialize", [], function() {
                     root.backendReady = true
                 })
             })
@@ -50,7 +50,7 @@ MainView {
     }
 
     function tabButtonColor(index) {
-        return currentTabIndex === index ? LomiriColors.orange : "#d7d7d7"
+        return currentTabIndex === index ? "#E95420" : "#d7d7d7"
     }
 
     Component {
@@ -89,6 +89,7 @@ MainView {
                 anchors.fill: parent
                 visible: root.currentTabIndex === 0
                 python: python
+                backendReady: root.backendReady
                 model: root.selectedModel
                 temperature: root.temperature
                 maxTokens: root.maxTokens
@@ -99,6 +100,7 @@ MainView {
                 anchors.fill: parent
                 visible: root.currentTabIndex === 1
                 python: python
+                backendReady: root.backendReady
             }
 
             SettingsPage {
@@ -106,6 +108,7 @@ MainView {
                 anchors.fill: parent
                 visible: root.currentTabIndex === 2
                 python: python
+                backendReady: root.backendReady
                 selectedModel: root.selectedModel
                 temperature: root.temperature
                 maxTokens: root.maxTokens
