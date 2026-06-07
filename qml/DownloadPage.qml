@@ -31,7 +31,7 @@ Page {
     }
 
     function refreshDownloadedModels() {
-        python.call("backend.list_models", [], function(result) {
+        python.call("list_models", [], function(result) {
             downloadPage.markReadyModels(result || [])
         })
     }
@@ -45,7 +45,7 @@ Page {
         modelsList.setProperty(index, "ready", false)
         modelsList.setProperty(index, "progress", 0.0)
 
-        python.call("backend.download_model", [item.name, item.url, requestId])
+        python.call("download_model", [item.name, item.url, requestId])
     }
 
     ListModel {
@@ -161,7 +161,7 @@ Page {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
                             text: model.name + "  - " + model.size + " - " + model.description
-                            color: theme.palette.normal.secondaryText
+                            color: "#5c5c5c"
                         }
 
                         ProgressBar {

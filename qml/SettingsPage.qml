@@ -24,7 +24,7 @@ Page {
     signal clearChat()
 
     function refreshModels() {
-        python.call("backend.list_models", [], function(result) {
+        python.call("list_models", [], function(result) {
             availableModels = result || []
             if (availableModels.length === 0) {
                 selectedModel = ""
@@ -43,7 +43,7 @@ Page {
     }
 
     function refreshStorage() {
-        python.call("backend.get_free_storage", [], function(result) {
+        python.call("get_free_storage", [], function(result) {
             freeStorage = result || i18n.tr("Storage unavailable")
         })
     }
@@ -97,7 +97,7 @@ Page {
                 Label {
                     text: i18n.tr("No models downloaded yet")
                     visible: settingsPage.availableModels.length === 0
-                    color: theme.palette.normal.secondaryText
+                    color: "#5c5c5c"
                 }
 
                 QQC2.ComboBox {

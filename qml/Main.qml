@@ -6,6 +6,7 @@
  */
 
 import QtQuick 2.7
+import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
 import io.thp.pyotherside 1.4
@@ -21,6 +22,10 @@ MainView {
 
     property bool backendReady: false
     property string backendError: ""
+    property int currentTabIndex: 0
+    property string selectedModel: ""
+    property real temperature: 0.7
+    property int maxTokens: 200
 
     function showError(message) {
         backendError = message
@@ -37,11 +42,15 @@ MainView {
         Component.onCompleted: {
             addImportPath(Qt.resolvedUrl("../backend"))
             importModule("backend", function() {
-                python.call("backend.initialize", [], function() {
+                python.call("initialize", [], function() {
                     root.backendReady = true
                 })
             })
         }
+    }
+
+    function tabButtonColor(index) {
+        return currentTabIndex === index ? LomiriColors.orange : "#d7d7d7"
     }
 
     Component {
@@ -66,41 +75,78 @@ MainView {
         }
     }
 
-    Tabs {
-        id: tabs
+    ColumnLayout {
         anchors.fill: parent
         visible: root.backendReady
+        spacing: 0
 
-        Tab {
-            title: i18n.tr("Chat")
-            iconSource: "image://theme/message"
-            page: ChatPage {
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ChatPage {
                 id: chatPage
-                title: i18n.tr("Chat")
+                anchors.fill: parent
+                visible: root.currentTabIndex === 0
                 python: python
-                model: settingsPage.selectedModel
-                temperature: settingsPage.temperature
-                maxTokens: settingsPage.maxTokens
+                model: root.selectedModel
+                temperature: root.temperature
+                maxTokens: root.maxTokens
             }
-        }
 
-        Tab {
-            title: i18n.tr("Models")
-            iconSource: "image://theme/download"
-            page: DownloadPage {
-                title: i18n.tr("Download Models")
+            DownloadPage {
+                id: downloadPage
+                anchors.fill: parent
+                visible: root.currentTabIndex === 1
                 python: python
             }
-        }
 
-        Tab {
-            title: i18n.tr("Settings")
-            iconSource: "image://theme/settings"
-            page: SettingsPage {
+            SettingsPage {
                 id: settingsPage
-                title: i18n.tr("Settings")
+                anchors.fill: parent
+                visible: root.currentTabIndex === 2
                 python: python
+                selectedModel: root.selectedModel
+                temperature: root.temperature
+                maxTokens: root.maxTokens
+                onSelectedModelChanged: root.selectedModel = selectedModel
+                onTemperatureChanged: root.temperature = temperature
+                onMaxTokensChanged: root.maxTokens = maxTokens
                 onClearChat: chatPage.clearHistory()
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(8)
+            color: "#efefef"
+            border.color: "#d0d0d0"
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: units.gu(1)
+                spacing: units.gu(1)
+
+                Button {
+                    Layout.fillWidth: true
+                    text: i18n.tr("Chat")
+                    color: root.tabButtonColor(0)
+                    onClicked: root.currentTabIndex = 0
+                }
+
+                Button {
+                    Layout.fillWidth: true
+                    text: i18n.tr("Models")
+                    color: root.tabButtonColor(1)
+                    onClicked: root.currentTabIndex = 1
+                }
+
+                Button {
+                    Layout.fillWidth: true
+                    text: i18n.tr("Settings")
+                    color: root.tabButtonColor(2)
+                    onClicked: root.currentTabIndex = 2
+                }
             }
         }
     }

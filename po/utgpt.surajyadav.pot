@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-07 11:33+0000\n"
+"POT-Creation-Date: 2026-06-07 11:43+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,7 +17,7 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: ../qml/ChatPage.qml:14 ../qml/Main.qml:75 ../qml/Main.qml:79
+#: ../qml/ChatPage.qml:14 ../qml/Main.qml:132
 msgid "Chat"
 msgstr ""
 
@@ -33,7 +33,7 @@ msgstr ""
 msgid "Waiting..."
 msgstr ""
 
-#: ../qml/DownloadPage.qml:14 ../qml/Main.qml:91
+#: ../qml/DownloadPage.qml:14
 msgid "Download Models"
 msgstr ""
 
@@ -41,23 +41,23 @@ msgstr ""
 msgid "Download"
 msgstr ""
 
-#: ../qml/Main.qml:54
+#: ../qml/Main.qml:63
 msgid "Backend Error"
 msgstr ""
 
-#: ../qml/Main.qml:63
+#: ../qml/Main.qml:72
 msgid "OK"
 msgstr ""
 
-#: ../qml/Main.qml:88
+#: ../qml/Main.qml:139
 msgid "Models"
 msgstr ""
 
-#: ../qml/Main.qml:97 ../qml/Main.qml:101 ../qml/SettingsPage.qml:15
+#: ../qml/Main.qml:146 ../qml/SettingsPage.qml:15
 msgid "Settings"
 msgstr ""
 
-#: ../qml/Main.qml:123
+#: ../qml/Main.qml:169
 msgid "Loading Python backend..."
 msgstr ""
 

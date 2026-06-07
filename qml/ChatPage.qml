@@ -84,7 +84,7 @@ Page {
         scrollToBottom()
 
         python.call(
-            "backend.run_inference",
+            "run_inference",
             [model, trimmed, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
