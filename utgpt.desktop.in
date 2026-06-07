@@ -1,7 +1,14 @@
+# utgpt.desktop.in
+#
+# Defines the launcher entry for UTGPT so Ubuntu Touch can expose the app from
+# the click package with the right command, icon, and category metadata.
+#
 [Desktop Entry]
-_Name=UTGPT
+Name=UTGPT
+Comment=On-device AI chat
 Exec=qmlscene %U qml/Main.qml
 Icon=assets/logo.svg
 Terminal=false
 Type=Application
+Categories=Utility;
 X-Lomiri-Touch=true

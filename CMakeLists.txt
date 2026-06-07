@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(utgpt C CXX)
 
+# CMakeLists.txt
+#
+# Configures the UTGPT Ubuntu Touch package build, installs QML/Python/assets,
+# and keeps desktop and manifest templates in sync with the packaged app.
+#
+
 # Automatically create moc files
 set(CMAKE_AUTOMOC ON)
 
@@ -22,9 +28,11 @@ configure_file(manifest.json.in ${CMAKE_CURRENT_BINARY_DIR}/manifest.json)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/manifest.json DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(FILES ${PROJECT_NAME}.apparmor DESTINATION ${DATA_DIR})
 
-install(DIRECTORY assets DESTINATION ${DATA_DIR})
+install(DIRECTORY assets DESTINATION ${DATA_DIR} USE_SOURCE_PERMISSIONS)
 
 install(DIRECTORY qml DESTINATION ${DATA_DIR})
+
+install(DIRECTORY backend DESTINATION ${DATA_DIR})
 
 # Translations
 file(GLOB_RECURSE I18N_SRC_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/po qml/*.qml qml/*.js)
@@ -54,6 +62,7 @@ file(GLOB_RECURSE PROJECT_SRC_FILES
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     qml/*.qml
     qml/*.js
+    backend/*.py
     src/*
     *.json
     *.json.in
@@ -62,4 +71,3 @@ file(GLOB_RECURSE PROJECT_SRC_FILES
 )
 
 add_custom_target(${PROJECT_NAME}_FILES ALL SOURCES ${PROJECT_SRC_FILES})
-

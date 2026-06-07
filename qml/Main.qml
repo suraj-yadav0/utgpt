@@ -50,8 +50,14 @@ MainView {
         Dialog {
             id: dialog
             property string message: ""
+
             title: i18n.tr("Backend Error")
-            text: message
+
+            Label {
+                width: parent ? parent.width : undefined
+                wrapMode: Text.Wrap
+                text: dialog.message
+            }
 
             Button {
                 text: i18n.tr("OK")
@@ -67,6 +73,7 @@ MainView {
 
         Tab {
             title: i18n.tr("Chat")
+            iconSource: "image://theme/message"
             page: ChatPage {
                 id: chatPage
                 title: i18n.tr("Chat")
@@ -79,6 +86,7 @@ MainView {
 
         Tab {
             title: i18n.tr("Models")
+            iconSource: "image://theme/download"
             page: DownloadPage {
                 title: i18n.tr("Download Models")
                 python: python
@@ -87,6 +95,7 @@ MainView {
 
         Tab {
             title: i18n.tr("Settings")
+            iconSource: "image://theme/settings"
             page: SettingsPage {
                 id: settingsPage
                 title: i18n.tr("Settings")

@@ -140,7 +140,7 @@ Page {
 
                 delegate: Rectangle {
                     width: cardsColumn.width
-                    color: theme.palette.normal.backgroundSecondaryText
+                    color: "#f7f7f7"
                     border.color: "#d7d7d7"
                     radius: units.gu(1)
                     implicitHeight: cardLayout.implicitHeight + units.gu(3)
