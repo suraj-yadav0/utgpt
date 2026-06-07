@@ -1,14 +1,14 @@
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the PACKAGE package.
+# This file is distributed under the same license as the utgpt.surajyadav package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: utgpt\n"
+"Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-01-17 02:22+0000\n"
+"POT-Creation-Date: 2026-06-07 11:33+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,8 +17,86 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-msgid "Hello World!"
+#: ../qml/ChatPage.qml:14 ../qml/Main.qml:75 ../qml/Main.qml:79
+msgid "Chat"
 msgstr ""
 
-msgid "UTGPT"
+#: ../qml/ChatPage.qml:171
+msgid "Type a message..."
+msgstr ""
+
+#: ../qml/ChatPage.qml:178
+msgid "Send"
+msgstr ""
+
+#: ../qml/ChatPage.qml:178
+msgid "Waiting..."
+msgstr ""
+
+#: ../qml/DownloadPage.qml:14 ../qml/Main.qml:91
+msgid "Download Models"
+msgstr ""
+
+#: ../qml/DownloadPage.qml:182
+msgid "Download"
+msgstr ""
+
+#: ../qml/Main.qml:54
+msgid "Backend Error"
+msgstr ""
+
+#: ../qml/Main.qml:63
+msgid "OK"
+msgstr ""
+
+#: ../qml/Main.qml:88
+msgid "Models"
+msgstr ""
+
+#: ../qml/Main.qml:97 ../qml/Main.qml:101 ../qml/SettingsPage.qml:15
+msgid "Settings"
+msgstr ""
+
+#: ../qml/Main.qml:123
+msgid "Loading Python backend..."
+msgstr ""
+
+#: ../qml/SettingsPage.qml:21
+msgid "Checking storage..."
+msgstr ""
+
+#: ../qml/SettingsPage.qml:47
+msgid "Storage unavailable"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:93
+msgid "Active Model"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:98
+msgid "No models downloaded yet"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:122
+msgid "Generation Settings"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:127
+msgid "Temperature"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:149
+msgid " tokens"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:149
+msgid "Max response length"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:176
+msgid "Storage"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:187
+msgid "Clear chat history"
 msgstr ""
