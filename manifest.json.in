@@ -1,0 +1,22 @@
+/*
+ * manifest.json.in
+ *
+ * Template manifest for the Ubuntu Touch click package. CMake expands the
+ * environment-specific values during the build while preserving the UTGPT app
+ * metadata and desktop hook wiring.
+ */
+{
+    "name": "utgpt.surajyadav",
+    "description": "On-device AI chat for Ubuntu Touch",
+    "architecture": "$ENV{ARCH}",
+    "title": "UTGPT",
+    "hooks": {
+        "utgpt": {
+            "apparmor": "utgpt.apparmor",
+            "desktop": "utgpt.desktop"
+        }
+    },
+    "version": "0.1",
+    "maintainer": "Suraj Yadav <surajyadav200701@gmail.com>",
+    "framework": "$ENV{CLICK_FRAMEWORK}"
+}
