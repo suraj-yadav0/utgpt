@@ -96,18 +96,24 @@ Page {
     function cancelDownload(index) {
         var item = modelsList.get(index)
         if (item.requestId) {
-            python.call("backend.cancel_download", [item.requestId], function(result) {
-                modelsList.setProperty(index, "downloading", false)
-                modelsList.setProperty(index, "paused", false)
-                modelsList.setProperty(index, "progress", 0.0)
-                modelsList.setProperty(index, "requestId", "")
-            })
-        } else {
+            python.call("backend.cancel_download", [item.requestId])
+        }
+        python.call("backend.clear_partial_download", [item.filename], function(result) {
             modelsList.setProperty(index, "downloading", false)
             modelsList.setProperty(index, "paused", false)
             modelsList.setProperty(index, "progress", 0.0)
-        }
+            modelsList.setProperty(index, "requestId", "")
+            downloadPage.refreshDownloadedModels()
+        })
     }
+
+    function deleteModel(index) {
+        var item = modelsList.get(index)
+        python.call("backend.delete_model", [item.filename], function(result) {
+            downloadPage.refreshDownloadedModels()
+        })
+    }
+
 
     ListModel {
         id: modelsList
@@ -259,10 +265,20 @@ Page {
                             fontSize: "small"
                         }
 
-                        Label {
-                            text: "\u2713 Ready"
-                            color: "#2e7d32"
+                        RowLayout {
+                            spacing: units.gu(1)
                             visible: model.ready
+
+                            Label {
+                                text: "\u2713 Ready"
+                                color: "#2e7d32"
+                            }
+
+                            Button {
+                                text: i18n.tr("Delete")
+                                color: "#C7162B"
+                                onClicked: downloadPage.deleteModel(index)
+                            }
                         }
 
                         RowLayout {

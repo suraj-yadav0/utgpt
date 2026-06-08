@@ -10,6 +10,10 @@ import subprocess
 import threading
 import urllib.request
 import urllib.error
+import platform
+import tarfile
+import io
+import time
 
 ACTIVE_DOWNLOADS = {}
 DOWNLOADS_LOCK = threading.Lock()
@@ -22,7 +26,14 @@ except ImportError:  # pragma: no cover - only unavailable outside the app runti
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 MODELS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/models")
-LLAMA_CLI_PATH = os.path.join(APP_DIR, "assets", "llama-cli")
+LLAMA_CLI_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-cli")
+LLAMA_CLI_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-cli")
+
+def get_llama_cli_path():
+    if os.path.exists(LLAMA_CLI_PATH_BUNDLED):
+        return LLAMA_CLI_PATH_BUNDLED
+    return LLAMA_CLI_PATH_WRITABLE
+
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
 ACTIVE_PROCESSES = set()
@@ -344,6 +355,100 @@ def get_download_states():
     return states
 
 
+LLAMA_CLI_READY = False
+LLAMA_CLI_ERROR = None
+
+def ensure_llama_cli():
+    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
+        return True
+    
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    
+    arch_map = {
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "x86_64": "x64",
+        "amd64": "x64"
+    }
+    
+    target_arch = arch_map.get(machine)
+    if not target_arch:
+        target_arch = "arm64" if "arm" in machine or "aarch" in machine else "x64"
+        
+    tag = "b9555"
+    try:
+        import json
+        req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", headers={"User-Agent": "UTGPT/0.1"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            if "tag_name" in data:
+                tag = data["tag_name"]
+    except Exception:
+        pass
+        
+    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
+    
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+        with urllib.request.urlopen(req, timeout=120) as response:
+            tar_data = response.read()
+            
+        with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
+            member_to_extract = None
+            for member in tar.getmembers():
+                if member.name.endswith("llama-cli"):
+                    member_to_extract = member
+                    break
+                    
+            if member_to_extract:
+                os.makedirs(MODELS_DIR, exist_ok=True)
+                f = tar.extractfile(member_to_extract)
+                if f:
+                    with open(LLAMA_CLI_PATH_WRITABLE, "wb") as dest_file:
+                        dest_file.write(f.read())
+                    os.chmod(LLAMA_CLI_PATH_WRITABLE, 0o755)
+                    return True
+    except Exception as e:
+        global LLAMA_CLI_ERROR
+        LLAMA_CLI_ERROR = str(e)
+        return False
+    return False
+
+def download_llama_cli_in_background():
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR
+    try:
+        if ensure_llama_cli():
+            LLAMA_CLI_READY = True
+        else:
+            if not LLAMA_CLI_ERROR:
+                LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
+    except Exception as e:
+        LLAMA_CLI_ERROR = str(e)
+
+def delete_model(filename):
+    models_dir = _ensure_models_dir()
+    filepath = os.path.join(models_dir, filename)
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+            return True
+        except OSError:
+            return False
+    return False
+
+def clear_partial_download(filename):
+    models_dir = _ensure_models_dir()
+    part_filepath = os.path.join(models_dir, filename + ".part")
+    if os.path.exists(part_filepath):
+        try:
+            os.remove(part_filepath)
+            return True
+        except OSError:
+            return False
+    return False
+
+
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
     prompt = "User: {0}\nAssistant:".format(user_message)
     model_path = os.path.join(_ensure_models_dir(), model_filename)
@@ -356,15 +461,24 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
         _emit_done(done_callback, ok=False, error_message="Model file not found: {0}".format(model_filename))
         return False
 
-    if not os.path.exists(LLAMA_CLI_PATH):
-        _emit_done(done_callback, ok=False, error_message="Missing llama-cli at assets/llama-cli.")
-        return False
+    cli_path = get_llama_cli_path()
+    if not os.path.exists(cli_path):
+        wait_time = 0
+        while not LLAMA_CLI_READY and wait_time < 30:
+            time.sleep(1)
+            wait_time += 1
+            
+        cli_path = get_llama_cli_path()
+        if not os.path.exists(cli_path):
+            error_msg = "Missing llama-cli. Downloader error: " + str(LLAMA_CLI_ERROR)
+            _emit_done(done_callback, ok=False, error_message=error_msg)
+            return False
 
     process = None
     try:
         process = subprocess.Popen(
             [
-                LLAMA_CLI_PATH,
+                cli_path,
                 "-m", model_path,
                 "-p", prompt,
                 "--temp", str(float(temperature)),
@@ -414,8 +528,18 @@ def stop_all_inference():
 
 def initialize():
     _ensure_models_dir()
+    global LLAMA_CLI_READY
+    
+    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
+        LLAMA_CLI_READY = True
+    else:
+        thread = threading.Thread(target=download_llama_cli_in_background)
+        thread.daemon = True
+        thread.start()
+        
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
-        "llamaCliPath": LLAMA_CLI_PATH
+        "llamaCliPath": get_llama_cli_path()
     }
+
