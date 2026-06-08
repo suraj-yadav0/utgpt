@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-07 12:11+0000\n"
+"POT-Creation-Date: 2026-06-08 13:01+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -37,7 +37,31 @@ msgstr ""
 msgid "Download Models"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:183
+#: ../qml/DownloadPage.qml:250
+msgid "Paused: "
+msgstr ""
+
+#: ../qml/DownloadPage.qml:253
+msgid "Connecting..."
+msgstr ""
+
+#: ../qml/DownloadPage.qml:255
+msgid "Downloading: "
+msgstr ""
+
+#: ../qml/DownloadPage.qml:273
+msgid "Pause"
+msgstr ""
+
+#: ../qml/DownloadPage.qml:273
+msgid "Resume"
+msgstr ""
+
+#: ../qml/DownloadPage.qml:284
+msgid "Cancel"
+msgstr ""
+
+#: ../qml/DownloadPage.qml:291
 msgid "Download"
 msgstr ""
 

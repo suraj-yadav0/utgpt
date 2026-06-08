@@ -9,6 +9,10 @@ import os
 import subprocess
 import threading
 import urllib.request
+import urllib.error
+
+ACTIVE_DOWNLOADS = {}
+DOWNLOADS_LOCK = threading.Lock()
 
 try:
     import pyotherside
@@ -17,7 +21,7 @@ except ImportError:  # pragma: no cover - only unavailable outside the app runti
 
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-MODELS_DIR = os.path.expanduser("~/Documents/UTGPT/models")
+MODELS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/models")
 LLAMA_CLI_PATH = os.path.join(APP_DIR, "assets", "llama-cli")
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
@@ -68,6 +72,16 @@ def _emit_download_error(callback_ref, name, message):
             "requestId": str(callback_ref),
             "name": name,
             "error": message
+        })
+
+
+def _emit_download_paused(callback_ref, name, filename, progress):
+    if callback_ref and not callable(callback_ref):
+        _send_event("download_paused", {
+            "requestId": str(callback_ref),
+            "name": name,
+            "filename": filename,
+            "progress": progress
         })
 
 
@@ -138,23 +152,74 @@ def get_free_storage():
     return "{0:.1f} GB free".format(free_gb)
 
 
-def download_model(name, url, progress_callback=None):
+def download_model_thread(name, url, progress_callback):
     models_dir = _ensure_models_dir()
     filename = os.path.basename(url.split("?", 1)[0]) or (name + ".gguf")
     destination = os.path.join(models_dir, filename)
     temp_destination = destination + ".part"
 
+    bytes_written = 0
+    if os.path.exists(temp_destination):
+        bytes_written = os.path.getsize(temp_destination)
+
+    total_size = 0
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
-        with urllib.request.urlopen(request, timeout=60) as response, open(temp_destination, "wb") as output_file:
-            total_size = int(response.headers.get("Content-Length", "0") or "0")
-            bytes_written = 0
-            _emit_download_progress(progress_callback, name, filename, 0.0)
+        
+        try:
+            if bytes_written > 0:
+                request.add_header("Range", "bytes={0}-".format(bytes_written))
+            response = urllib.request.urlopen(request, timeout=60)
+        except urllib.error.HTTPError as http_err:
+            if bytes_written > 0:
+                bytes_written = 0
+                request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+                response = urllib.request.urlopen(request, timeout=60)
+            else:
+                raise http_err
+        except Exception as err:
+            if bytes_written > 0:
+                bytes_written = 0
+                request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+                response = urllib.request.urlopen(request, timeout=60)
+            else:
+                raise err
 
+        with DOWNLOADS_LOCK:
+            if progress_callback in ACTIVE_DOWNLOADS:
+                ACTIVE_DOWNLOADS[progress_callback]["response"] = response
+
+        status = response.getcode()
+        if status == 206 and bytes_written > 0:
+            mode = "ab"
+            content_range = response.headers.get("Content-Range", "")
+            if "/" in content_range:
+                try:
+                    total_size = int(content_range.split("/")[-1])
+                except ValueError:
+                    pass
+            if total_size <= 0:
+                content_length = int(response.headers.get("Content-Length", "0") or "0")
+                total_size = bytes_written + content_length
+        else:
+            mode = "wb"
+            bytes_written = 0
+            content_length = int(response.headers.get("Content-Length", "0") or "0")
+            total_size = content_length
+
+        _emit_download_progress(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
+
+        with open(temp_destination, mode) as output_file:
             while True:
+                with DOWNLOADS_LOCK:
+                    task = ACTIVE_DOWNLOADS.get(progress_callback)
+                    if not task or task.get("paused") or task.get("canceled"):
+                        break
+
                 chunk = response.read(DOWNLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
+                
                 output_file.write(chunk)
                 bytes_written += len(chunk)
 
@@ -162,15 +227,121 @@ def download_model(name, url, progress_callback=None):
                     progress = min(float(bytes_written) / float(total_size), 1.0)
                     _emit_download_progress(progress_callback, name, filename, progress)
 
+        # Check exit cause
+        with DOWNLOADS_LOCK:
+            task = ACTIVE_DOWNLOADS.get(progress_callback)
+            if task and task.get("paused"):
+                _emit_download_paused(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
+                return
+            elif not task or task.get("canceled"):
+                if os.path.exists(temp_destination):
+                    try:
+                        os.remove(temp_destination)
+                    except OSError:
+                        pass
+                _emit_download_error(progress_callback, name, "Download canceled")
+                return
+
         os.replace(temp_destination, destination)
         _emit_download_progress(progress_callback, name, filename, 1.0)
         _emit_download_complete(progress_callback, name, filename)
         return filename
-    except Exception as error:  # pragma: no cover - exercised from app runtime
-        if os.path.exists(temp_destination):
-            os.remove(temp_destination)
+    except Exception as error:
+        with DOWNLOADS_LOCK:
+            task = ACTIVE_DOWNLOADS.get(progress_callback)
+            if task and task.get("paused"):
+                _emit_download_paused(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
+                return
         _emit_download_error(progress_callback, name, str(error))
         return ""
+    finally:
+        with DOWNLOADS_LOCK:
+            if progress_callback in ACTIVE_DOWNLOADS:
+                del ACTIVE_DOWNLOADS[progress_callback]
+
+
+def download_model(name, url, progress_callback=None):
+    with DOWNLOADS_LOCK:
+        if progress_callback in ACTIVE_DOWNLOADS:
+            task = ACTIVE_DOWNLOADS[progress_callback]
+            if task.get("paused"):
+                task["paused"] = False
+                task["canceled"] = False
+                thread = threading.Thread(target=download_model_thread, args=(name, url, progress_callback))
+                thread.daemon = True
+                thread.start()
+                return True
+            return False
+
+        task = {
+            "name": name,
+            "url": url,
+            "request_id": progress_callback,
+            "paused": False,
+            "canceled": False,
+            "response": None
+        }
+        ACTIVE_DOWNLOADS[progress_callback] = task
+
+    thread = threading.Thread(target=download_model_thread, args=(name, url, progress_callback))
+    thread.daemon = True
+    thread.start()
+    return True
+
+
+def pause_download(request_id):
+    with DOWNLOADS_LOCK:
+        task = ACTIVE_DOWNLOADS.get(request_id)
+        if task:
+            task["paused"] = True
+            response = task.get("response")
+            if response:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+            return True
+    return False
+
+
+def cancel_download(request_id):
+    with DOWNLOADS_LOCK:
+        task = ACTIVE_DOWNLOADS.get(request_id)
+        if task:
+            task["canceled"] = True
+            response = task.get("response")
+            if response:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+            return True
+    return False
+
+
+def get_download_states():
+    models_dir = _ensure_models_dir()
+    states = {}
+    
+    if os.path.isdir(models_dir):
+        for filename in os.listdir(models_dir):
+            if filename.lower().endswith(".gguf"):
+                states[filename] = {"status": "ready"}
+            elif filename.lower().endswith(".gguf.part"):
+                base_name = filename[:-5]
+                states[base_name] = {"status": "paused", "size": os.path.getsize(os.path.join(models_dir, filename))}
+
+    with DOWNLOADS_LOCK:
+        for request_id, task in ACTIVE_DOWNLOADS.items():
+            filename = os.path.basename(task["url"].split("?", 1)[0]) or (task["name"] + ".gguf")
+            if task.get("paused"):
+                states[filename] = {"status": "paused", "requestId": request_id}
+            elif task.get("canceled"):
+                pass
+            else:
+                states[filename] = {"status": "downloading", "requestId": request_id}
+                
+    return states
 
 
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
