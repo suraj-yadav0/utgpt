@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-08 13:05+0000\n"
+"POT-Creation-Date: 2026-06-12 14:54+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -21,15 +21,15 @@ msgstr ""
 msgid "Chat"
 msgstr ""
 
-#: ../qml/ChatPage.qml:172
+#: ../qml/ChatPage.qml:175
 msgid "Type a message..."
 msgstr ""
 
-#: ../qml/ChatPage.qml:179
+#: ../qml/ChatPage.qml:182
 msgid "Send"
 msgstr ""
 
-#: ../qml/ChatPage.qml:179
+#: ../qml/ChatPage.qml:182
 msgid "Waiting..."
 msgstr ""
 
@@ -37,31 +37,35 @@ msgstr ""
 msgid "Download Models"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:250
+#: ../qml/DownloadPage.qml:244
 msgid "Paused: "
 msgstr ""
 
-#: ../qml/DownloadPage.qml:253
+#: ../qml/DownloadPage.qml:247
 msgid "Connecting..."
 msgstr ""
 
-#: ../qml/DownloadPage.qml:255
+#: ../qml/DownloadPage.qml:249
 msgid "Downloading: "
 msgstr ""
 
-#: ../qml/DownloadPage.qml:273
+#: ../qml/DownloadPage.qml:266
+msgid "Delete"
+msgstr ""
+
+#: ../qml/DownloadPage.qml:277
 msgid "Pause"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:273
+#: ../qml/DownloadPage.qml:277
 msgid "Resume"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:284
+#: ../qml/DownloadPage.qml:288
 msgid "Cancel"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:291
+#: ../qml/DownloadPage.qml:295
 msgid "Download"
 msgstr ""
 
