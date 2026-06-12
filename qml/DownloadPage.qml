@@ -16,14 +16,6 @@ Page {
     property var python
     property bool backendReady: false
 
-    Timer {
-        id: pollTimer
-        interval: 1000
-        repeat: true
-        running: downloadPage.visible && downloadPage.backendReady
-        onTriggered: downloadPage.refreshDownloadedModels()
-    }
-
     function updateDownloadStates(states) {
         for (var row = 0; row < modelsList.count; row++) {
             var item = modelsList.get(row)
@@ -42,27 +34,12 @@ Page {
                     if (state.requestId) {
                         modelsList.setProperty(row, "requestId", state.requestId)
                     }
-                    if (state.progress !== undefined) {
-                        modelsList.setProperty(row, "progress", state.progress)
-                    }
                 } else if (state.status === "paused") {
                     modelsList.setProperty(row, "ready", false)
                     modelsList.setProperty(row, "downloading", false)
                     modelsList.setProperty(row, "paused", true)
                     if (state.requestId) {
                         modelsList.setProperty(row, "requestId", state.requestId)
-                    }
-                    if (state.progress !== undefined) {
-                        modelsList.setProperty(row, "progress", state.progress)
-                    }
-                } else if (state.status === "error") {
-                    modelsList.setProperty(row, "ready", false)
-                    modelsList.setProperty(row, "downloading", false)
-                    modelsList.setProperty(row, "paused", false)
-                    modelsList.setProperty(row, "progress", 0.0)
-                    if (state.error) {
-                        root.showError(state.error)
-                        python.call("backend.clear_model_error", [item.filename])
                     }
                 }
             } else {
@@ -179,7 +156,42 @@ Page {
         }
     }
 
+    Connections {
+        target: python
 
+        function onReceived(data) {
+            if (!data || !data.event || !data.payload) {
+                return
+            }
+
+            for (var index = 0; index < modelsList.count; index++) {
+                var item = modelsList.get(index)
+                if (item.requestId !== data.payload.requestId) {
+                    continue
+                }
+
+                if (data.event === "download_progress") {
+                    modelsList.setProperty(index, "progress", data.payload.progress)
+                    modelsList.setProperty(index, "downloading", true)
+                    modelsList.setProperty(index, "paused", false)
+                } else if (data.event === "download_paused") {
+                    modelsList.setProperty(index, "progress", data.payload.progress)
+                    modelsList.setProperty(index, "downloading", false)
+                    modelsList.setProperty(index, "paused", true)
+                } else if (data.event === "download_complete") {
+                    modelsList.setProperty(index, "progress", 1.0)
+                    modelsList.setProperty(index, "downloading", false)
+                    modelsList.setProperty(index, "paused", false)
+                    modelsList.setProperty(index, "ready", true)
+                } else if (data.event === "download_error") {
+                    modelsList.setProperty(index, "downloading", false)
+                    modelsList.setProperty(index, "paused", false)
+                    modelsList.setProperty(index, "progress", 0.0)
+                }
+                break
+            }
+        }
+    }
 
     onBackendReadyChanged: if (backendReady) refreshDownloadedModels()
     onVisibleChanged: if (visible && backendReady) refreshDownloadedModels()

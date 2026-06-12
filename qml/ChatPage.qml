@@ -44,7 +44,7 @@ Page {
         if (currentText === "...") {
             messageModel.setProperty(lastIndex, "text", chunk)
         } else {
-            messageModel.setProperty(lastIndex, "text", currentText + "\n" + chunk)
+            messageModel.setProperty(lastIndex, "text", currentText + chunk)
         }
         scrollToBottom()
     }

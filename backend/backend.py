@@ -172,14 +172,6 @@ def get_free_storage():
     return "{0:.1f} GB free".format(free_gb)
 
 
-LAST_ERRORS = {}
-
-def clear_model_error(filename):
-    global LAST_ERRORS
-    if filename in LAST_ERRORS:
-        del LAST_ERRORS[filename]
-    return True
-
 def download_model_thread(name, url, progress_callback):
     models_dir = _ensure_models_dir()
     filename = os.path.basename(url.split("?", 1)[0]) or (name + ".gguf")
@@ -235,10 +227,7 @@ def download_model_thread(name, url, progress_callback):
             content_length = int(response.headers.get("Content-Length", "0") or "0")
             total_size = content_length
 
-        with DOWNLOADS_LOCK:
-            task = ACTIVE_DOWNLOADS.get(progress_callback)
-            if task:
-                task["progress"] = float(bytes_written) / float(total_size) if total_size > 0 else 0.0
+        _emit_download_progress(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
 
         with open(temp_destination, mode) as output_file:
             while True:
@@ -256,14 +245,13 @@ def download_model_thread(name, url, progress_callback):
 
                 if total_size > 0:
                     progress = min(float(bytes_written) / float(total_size), 1.0)
-                    with DOWNLOADS_LOCK:
-                        task = ACTIVE_DOWNLOADS.get(progress_callback)
-                        if task:
-                            task["progress"] = progress
+                    _emit_download_progress(progress_callback, name, filename, progress)
 
+        # Check exit cause
         with DOWNLOADS_LOCK:
             task = ACTIVE_DOWNLOADS.get(progress_callback)
             if task and task.get("paused"):
+                _emit_download_paused(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
                 return
             elif not task or task.get("canceled"):
                 if os.path.exists(temp_destination):
@@ -271,17 +259,20 @@ def download_model_thread(name, url, progress_callback):
                         os.remove(temp_destination)
                     except OSError:
                         pass
+                _emit_download_error(progress_callback, name, "Download canceled")
                 return
 
         os.replace(temp_destination, destination)
+        _emit_download_progress(progress_callback, name, filename, 1.0)
+        _emit_download_complete(progress_callback, name, filename)
         return filename
     except Exception as error:
         with DOWNLOADS_LOCK:
             task = ACTIVE_DOWNLOADS.get(progress_callback)
             if task and task.get("paused"):
+                _emit_download_paused(progress_callback, name, filename, float(bytes_written) / float(total_size) if total_size > 0 else 0.0)
                 return
-        global LAST_ERRORS
-        LAST_ERRORS[filename] = str(error)
+        _emit_download_error(progress_callback, name, str(error))
         return ""
     finally:
         with DOWNLOADS_LOCK:
@@ -290,9 +281,6 @@ def download_model_thread(name, url, progress_callback):
 
 
 def download_model(name, url, progress_callback=None):
-    filename = os.path.basename(url.split("?", 1)[0]) or (name + ".gguf")
-    clear_model_error(filename)
-
     with DOWNLOADS_LOCK:
         if progress_callback in ACTIVE_DOWNLOADS:
             task = ACTIVE_DOWNLOADS[progress_callback]
@@ -311,8 +299,7 @@ def download_model(name, url, progress_callback=None):
             "request_id": progress_callback,
             "paused": False,
             "canceled": False,
-            "response": None,
-            "progress": 0.0
+            "response": None
         }
         ACTIVE_DOWNLOADS[progress_callback] = task
 
@@ -359,29 +346,21 @@ def get_download_states():
     if os.path.isdir(models_dir):
         for filename in os.listdir(models_dir):
             if filename.lower().endswith(".gguf"):
-                states[filename] = {"status": "ready", "progress": 1.0}
+                states[filename] = {"status": "ready"}
             elif filename.lower().endswith(".gguf.part"):
                 base_name = filename[:-5]
-                states[base_name] = {"status": "paused", "size": os.path.getsize(os.path.join(models_dir, filename)), "progress": 0.0}
+                states[base_name] = {"status": "paused", "size": os.path.getsize(os.path.join(models_dir, filename))}
 
     with DOWNLOADS_LOCK:
         for request_id, task in ACTIVE_DOWNLOADS.items():
             filename = os.path.basename(task["url"].split("?", 1)[0]) or (task["name"] + ".gguf")
             if task.get("paused"):
-                states[filename] = {"status": "paused", "requestId": request_id, "progress": task.get("progress", 0.0)}
+                states[filename] = {"status": "paused", "requestId": request_id}
             elif task.get("canceled"):
                 pass
             else:
-                states[filename] = {"status": "downloading", "requestId": request_id, "progress": task.get("progress", 0.0)}
+                states[filename] = {"status": "downloading", "requestId": request_id}
                 
-    global LAST_ERRORS
-    for filename, error_msg in list(LAST_ERRORS.items()):
-        if filename in states:
-            states[filename]["status"] = "error"
-            states[filename]["error"] = error_msg
-        else:
-            states[filename] = {"status": "error", "error": error_msg, "progress": 0.0}
-
     return states
 
 
@@ -389,14 +368,7 @@ LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
 
 def ensure_llama_cli():
-    has_so = False
-    if os.path.isdir(MODELS_DIR):
-        for f in os.listdir(MODELS_DIR):
-            if ".so" in f:
-                has_so = True
-                break
-
-    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or (os.path.exists(LLAMA_CLI_PATH_WRITABLE) and has_so):
+    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
         return True
     
     system = platform.system().lower()
@@ -427,31 +399,25 @@ def ensure_llama_cli():
     url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
     
     try:
-        if os.path.exists(LLAMA_CLI_PATH_WRITABLE):
-            try:
-                os.remove(LLAMA_CLI_PATH_WRITABLE)
-            except OSError:
-                pass
-
         req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=120) as response:
             tar_data = response.read()
             
         with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
-            os.makedirs(MODELS_DIR, exist_ok=True)
-            has_extracted_cli = False
+            member_to_extract = None
             for member in tar.getmembers():
-                basename = os.path.basename(member.name)
-                if member.isfile() and (basename == "llama-cli" or ".so" in basename or basename.startswith("lib")):
-                    member_f = tar.extractfile(member)
-                    if member_f:
-                        dest_path = os.path.join(MODELS_DIR, basename)
-                        with open(dest_path, "wb") as dest_file:
-                            dest_file.write(member_f.read())
-                        if basename == "llama-cli":
-                            os.chmod(dest_path, 0o755)
-                            has_extracted_cli = True
-            return has_extracted_cli
+                if member.name.endswith("llama-cli"):
+                    member_to_extract = member
+                    break
+                    
+            if member_to_extract:
+                os.makedirs(MODELS_DIR, exist_ok=True)
+                f = tar.extractfile(member_to_extract)
+                if f:
+                    with open(LLAMA_CLI_PATH_WRITABLE, "wb") as dest_file:
+                        dest_file.write(f.read())
+                    os.chmod(LLAMA_CLI_PATH_WRITABLE, 0o755)
+                    return True
     except Exception as e:
         global LLAMA_CLI_ERROR
         LLAMA_CLI_ERROR = str(e)
@@ -522,8 +488,11 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
                 "-p", prompt,
                 "--temp", str(float(temperature)),
                 "-n", str(int(max_tokens)),
-                "--no-display-prompt"
+                "--no-display-prompt",
+                "-st",
+                "--simple-io"
             ],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -531,10 +500,42 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
         )
         _register_process(process)
 
-        for line in iter(process.stdout.readline, ""):
-            text = line.rstrip()
-            if text:
-                _emit_token(token_callback, text)
+        output_buffer = ""
+        started = False
+        has_emitted_content = False
+        
+        while True:
+            char = process.stdout.read(1)
+            if not char:
+                break
+            
+            output_buffer += char
+            
+            if not started:
+                if "Assistant:" in output_buffer:
+                    output_buffer = ""
+                    started = True
+                continue
+                
+            if "[ Prompt:" in output_buffer:
+                break
+                
+            if len(output_buffer) > 20:
+                emit_char = output_buffer[0]
+                output_buffer = output_buffer[1:]
+                if not has_emitted_content:
+                    if emit_char.strip() == "":
+                        continue
+                    else:
+                        has_emitted_content = True
+                _emit_token(token_callback, emit_char)
+
+        if started and output_buffer:
+            remaining = output_buffer.split("[ Prompt:")[0]
+            if not has_emitted_content:
+                remaining = remaining.lstrip()
+            if remaining:
+                _emit_token(token_callback, remaining)
 
         exit_code = process.wait()
         if exit_code != 0:
