@@ -89,7 +89,10 @@ Page {
             [model, trimmed, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
-                    finishResponse(false, "Unable to start inference.")
+                    var lastIndex = messageModel.count - 1
+                    if (lastIndex >= 0 && messageModel.get(lastIndex).text === "...") {
+                        finishResponse(false, "Unable to start inference.")
+                    }
                 }
             }
         )

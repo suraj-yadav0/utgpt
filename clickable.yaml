@@ -9,3 +9,4 @@ kill: qmlscene
 skip_review: true
 postbuild:
   - if [ -f assets/llama-cli ]; then chmod +x assets/llama-cli; fi
+

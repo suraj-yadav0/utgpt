@@ -15,6 +15,15 @@ import tarfile
 import io
 import time
 
+def _urlopen(req, timeout=60):
+    try:
+        import ssl
+        context = ssl._create_unverified_context()
+        return urllib.request.urlopen(req, timeout=timeout, context=context)
+    except Exception:
+        return urllib.request.urlopen(req, timeout=timeout)
+
+
 ACTIVE_DOWNLOADS = {}
 DOWNLOADS_LOCK = threading.Lock()
 
@@ -180,19 +189,19 @@ def download_model_thread(name, url, progress_callback):
         try:
             if bytes_written > 0:
                 request.add_header("Range", "bytes={0}-".format(bytes_written))
-            response = urllib.request.urlopen(request, timeout=60)
+            response = _urlopen(request, timeout=60)
         except urllib.error.HTTPError as http_err:
             if bytes_written > 0:
                 bytes_written = 0
                 request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
-                response = urllib.request.urlopen(request, timeout=60)
+                response = _urlopen(request, timeout=60)
             else:
                 raise http_err
         except Exception as err:
             if bytes_written > 0:
                 bytes_written = 0
                 request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
-                response = urllib.request.urlopen(request, timeout=60)
+                response = _urlopen(request, timeout=60)
             else:
                 raise err
 
@@ -380,7 +389,7 @@ def ensure_llama_cli():
     try:
         import json
         req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", headers={"User-Agent": "UTGPT/0.1"})
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with _urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode())
             if "tag_name" in data:
                 tag = data["tag_name"]
@@ -391,7 +400,7 @@ def ensure_llama_cli():
     
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with _urlopen(req, timeout=120) as response:
             tar_data = response.read()
             
         with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
@@ -463,16 +472,12 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
 
     cli_path = get_llama_cli_path()
     if not os.path.exists(cli_path):
-        wait_time = 0
-        while not LLAMA_CLI_READY and wait_time < 30:
-            time.sleep(1)
-            wait_time += 1
-            
-        cli_path = get_llama_cli_path()
-        if not os.path.exists(cli_path):
+        if LLAMA_CLI_ERROR:
             error_msg = "Missing llama-cli. Downloader error: " + str(LLAMA_CLI_ERROR)
-            _emit_done(done_callback, ok=False, error_message=error_msg)
-            return False
+        else:
+            error_msg = "Inference engine is still downloading. Please try again in a moment."
+        _emit_done(done_callback, ok=False, error_message=error_msg)
+        return False
 
     process = None
     try:
