@@ -459,9 +459,27 @@ def clear_partial_download(filename):
     return False
 
 
+def get_prompt_and_boundary(model_filename, user_message):
+    lower_name = model_filename.lower()
+    if "tinyllama" in lower_name:
+        prompt = "<|system|>\nYou are a helpful assistant.</s>\n<|user|>\n{0}</s>\n<|assistant|>\n".format(user_message)
+        boundary = "<|assistant|>"
+    elif "qwen" in lower_name or "smollm" in lower_name:
+        prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{0}<|im_end|>\n<|im_start|>assistant\n".format(user_message)
+        boundary = "<|im_start|>assistant"
+    elif "llama3" in lower_name or "llama-3" in lower_name:
+        prompt = "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{0}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n".format(user_message)
+        boundary = "<|start_header_id|>assistant"
+    else:
+        # Fallback to the original simple format
+        prompt = "User: {0}\nAssistant:".format(user_message)
+        boundary = "Assistant:"
+    return prompt, boundary
+
+
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
     print("UTGPT_LOG: Entering run_inference with model={0}, prompt={1}".format(model_filename, user_message), file=sys.stderr, flush=True)
-    prompt = "User: {0}\nAssistant:".format(user_message)
+    prompt, boundary = get_prompt_and_boundary(model_filename, user_message)
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
@@ -519,8 +537,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             output_buffer += char
             
             if not started:
-                if "Assistant:" in output_buffer:
-                    print("UTGPT_LOG: Detected 'Assistant:' boundary, starting token stream", file=sys.stderr, flush=True)
+                if boundary in output_buffer:
+                    print("UTGPT_LOG: Detected '{0}' boundary, starting token stream".format(boundary), file=sys.stderr, flush=True)
                     output_buffer = ""
                     started = True
                 continue

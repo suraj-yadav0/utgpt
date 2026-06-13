@@ -108,19 +108,22 @@ Page {
 
         function onReceived(result) {
             console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
-            if (!result || !result.event || !result.payload) {
+            
+            // PyOtherSide received signal passes arguments wrapped in a JavaScript array
+            var data = (result && result.length > 0) ? result[0] : null
+            if (!data || !data.event || !data.payload) {
                 return
             }
 
-            if (result.payload.requestId !== pendingRequestId) {
-                console.log("QML_LOG: Request ID mismatch: " + result.payload.requestId + " != " + pendingRequestId)
+            if (data.payload.requestId !== pendingRequestId) {
+                console.log("QML_LOG: Request ID mismatch: " + data.payload.requestId + " != " + pendingRequestId)
                 return
             }
 
-            if (result.event === "inference_token") {
-                chatPage.appendAssistantText(result.payload.text)
-            } else if (result.event === "inference_done") {
-                chatPage.finishResponse(result.payload.ok, result.payload.error)
+            if (data.event === "inference_token") {
+                chatPage.appendAssistantText(data.payload.text)
+            } else if (data.event === "inference_done") {
+                chatPage.finishResponse(data.payload.ok, data.payload.error)
                 pendingRequestId = ""
             }
         }

@@ -161,30 +161,33 @@ Page {
 
         function onReceived(result) {
             console.log("QML_LOG: DownloadPage received result type:", typeof result, "JSON:", JSON.stringify(result))
-            if (!result || !result.event || !result.payload) {
+            
+            // PyOtherSide received signal passes arguments wrapped in a JavaScript array
+            var data = (result && result.length > 0) ? result[0] : null
+            if (!data || !data.event || !data.payload) {
                 return
             }
 
             for (var index = 0; index < modelsList.count; index++) {
                 var item = modelsList.get(index)
-                if (item.requestId !== result.payload.requestId) {
+                if (item.requestId !== data.payload.requestId) {
                     continue
                 }
 
-                if (result.event === "download_progress") {
-                    modelsList.setProperty(index, "progress", result.payload.progress)
+                if (data.event === "download_progress") {
+                    modelsList.setProperty(index, "progress", data.payload.progress)
                     modelsList.setProperty(index, "downloading", true)
                     modelsList.setProperty(index, "paused", false)
-                } else if (result.event === "download_paused") {
-                    modelsList.setProperty(index, "progress", result.payload.progress)
+                } else if (data.event === "download_paused") {
+                    modelsList.setProperty(index, "progress", data.payload.progress)
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", true)
-                } else if (result.event === "download_complete") {
+                } else if (data.event === "download_complete") {
                     modelsList.setProperty(index, "progress", 1.0)
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
                     modelsList.setProperty(index, "ready", true)
-                } else if (result.event === "download_error") {
+                } else if (data.event === "download_error") {
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
                     modelsList.setProperty(index, "progress", 0.0)
