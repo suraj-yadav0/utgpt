@@ -16,6 +16,7 @@ MainView {
     objectName: "mainView"
     applicationName: "utgpt.surajyadav"
     automaticOrientation: true
+    anchorToKeyboard: true
 
     width: units.gu(45)
     height: units.gu(75)
@@ -121,7 +122,8 @@ MainView {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: units.gu(8)
+            Layout.preferredHeight: visible ? units.gu(8) : 0
+            visible: !Qt.inputMethod.visible
             color: "#efefef"
             border.color: "#d0d0d0"
 

@@ -129,64 +129,268 @@ Page {
         }
     }
 
+    Connections {
+        target: Qt.inputMethod
+        function onVisibleChanged() {
+            if (Qt.inputMethod.visible) {
+                scrollTimer.start()
+            }
+        }
+    }
+
+    Timer {
+        id: scrollTimer
+        interval: 150
+        repeat: false
+        onTriggered: chatPage.scrollToBottom()
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#f5f5f7"
+        z: -1
+    }
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: units.gu(2)
+        anchors.margins: units.gu(1.5)
         spacing: units.gu(1)
+
+        // Status pill for selected model
+        Rectangle {
+            id: statusPill
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(5)
+            color: chatPage.model ? "#EBF8FF" : "#FFF5F5"
+            border.color: chatPage.model ? "#BEE3F8" : "#FEB2B2"
+            border.width: 1
+            radius: units.gu(1)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(1.5)
+                anchors.rightMargin: units.gu(1.5)
+                spacing: units.gu(1)
+
+                Rectangle {
+                    width: units.gu(1)
+                    height: units.gu(1)
+                    radius: width / 2
+                    color: chatPage.model ? "#3182CE" : "#E53E3E"
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    text: {
+                        if (chatPage.model) {
+                            return i18n.tr("Model: ") + chatPage.model
+                        }
+                        if (settingsPage.availableModels.length === 0) {
+                            return i18n.tr("No models downloaded - tap to download one")
+                        }
+                        return i18n.tr("No active model - tap to select in Settings")
+                    }
+                    color: chatPage.model ? "#2B6CB0" : "#9B2C2C"
+                    font.bold: true
+                    fontSize: "small"
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    text: "\u2192" // Right arrow
+                    color: chatPage.model ? "#3182CE" : "#E53E3E"
+                    fontSize: "small"
+                    Layout.alignment: Qt.AlignVCenter
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (!chatPage.model && settingsPage.availableModels.length === 0) {
+                        root.currentTabIndex = 1 // Go to Models tab
+                    } else {
+                        root.currentTabIndex = 2 // Go to Settings tab
+                    }
+                }
+            }
+        }
 
         ListView {
             id: messageList
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: units.gu(1)
+            spacing: units.gu(1.5)
             model: messageModel
+            onHeightChanged: chatPage.scrollToBottom()
 
             delegate: Item {
                 width: messageList.width
-                height: bubble.implicitHeight + units.gu(1)
+                height: Math.max(units.gu(4.5), bubble.height) + units.gu(1.5)
 
+                // Avatar bubble
+                Rectangle {
+                    id: avatar
+                    width: units.gu(4)
+                    height: units.gu(4)
+                    radius: width / 2
+                    color: model.role === "user" ? "#FFEBE6" : "#E2E8F0"
+                    anchors.top: parent.top
+                    anchors.topMargin: units.gu(0.5)
+                    anchors.left: model.role === "assistant" ? parent.left : undefined
+                    anchors.right: model.role === "user" ? parent.right : undefined
+
+                    Label {
+                        anchors.centerIn: parent
+                        text: model.role === "user" ? "U" : "AI"
+                        color: model.role === "user" ? "#E95420" : "#4A5568"
+                        font.bold: true
+                        fontSize: "small"
+                    }
+                }
+
+                // Message bubble
                 Rectangle {
                     id: bubble
                     anchors {
                         top: parent.top
-                        right: model.role === "user" ? parent.right : undefined
-                        left: model.role === "assistant" ? parent.left : undefined
+                        topMargin: units.gu(0.5)
+                        left: model.role === "assistant" ? avatar.right : undefined
+                        right: model.role === "user" ? avatar.left : undefined
+                        leftMargin: model.role === "assistant" ? units.gu(1) : undefined
+                        rightMargin: model.role === "user" ? units.gu(1) : undefined
                     }
-                    width: Math.min(messageText.implicitWidth + units.gu(4), messageList.width * 0.78)
-                    implicitHeight: messageText.implicitHeight + units.gu(2.5)
-                    radius: units.gu(1.2)
-                    color: model.role === "user" ? "#19B6EE" : "#2a2a2a"
+                    width: Math.min(messageText.implicitWidth + units.gu(3.5), messageList.width * 0.76)
+                    height: messageText.implicitHeight + units.gu(2)
+                    radius: units.gu(1.5)
+                    color: model.role === "user" ? "#E95420" : "#FFFFFF"
+                    border.color: model.role === "user" ? "transparent" : "#E2E8F0"
+                    border.width: model.role === "user" ? 0 : 1
 
                     Label {
                         id: messageText
                         anchors.fill: parent
-                        anchors.margins: units.gu(1.2)
+                        anchors.margins: units.gu(1)
                         text: model.text
                         wrapMode: Text.Wrap
-                        color: "white"
+                        color: model.role === "user" ? "#FFFFFF" : "#1E293B"
                     }
                 }
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: units.gu(1)
+        // Welcome placeholder View
+        Column {
+            id: welcomeView
+            anchors.centerIn: parent
+            width: parent.width - units.gu(6)
+            spacing: units.gu(2)
+            visible: messageModel.count === 0
 
-            TextField {
-                id: composer
-                Layout.fillWidth: true
-                placeholderText: i18n.tr("Type a message...")
-                enabled: !chatPage.isResponding
-                onAccepted: chatPage.sendMessage()
+            Rectangle {
+                width: units.gu(8)
+                height: units.gu(8)
+                radius: units.gu(2)
+                color: "#FFEBE6"
+                anchors.horizontalCenter: parent.horizontalCenter
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "\uD83D\uDCAC" // Chat speech bubble emoji
+                    fontSize: "large"
+                }
             }
 
-            Button {
-                id: sendButton
-                text: chatPage.isResponding ? i18n.tr("Waiting...") : i18n.tr("Send")
-                enabled: !chatPage.isResponding
-                onClicked: chatPage.sendMessage()
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: i18n.tr("Welcome to UTGPT")
+                font.bold: true
+                fontSize: "large"
+                color: "#1E293B"
+            }
+
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: i18n.tr("Ask anything! Choose a model above or type a message to start the conversation.")
+                color: "#64748B"
+                fontSize: "small"
+            }
+
+            Column {
+                width: parent.width
+                spacing: units.gu(1)
+
+                Label {
+                    text: i18n.tr("Try asking:")
+                    color: "#94A3B8"
+                    fontSize: "x-small"
+                    font.bold: true
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                Button {
+                    width: parent.width
+                    text: i18n.tr("What is Ubuntu Touch?")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    width: parent.width
+                    text: i18n.tr("Explain QML in simple terms")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = text
+                        chatPage.sendMessage()
+                    }
+                }
+            }
+        }
+
+        // Input card row
+        Rectangle {
+            id: inputCard
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(7.5)
+            color: "#FFFFFF"
+            border.color: "#E2E8F0"
+            border.width: 1
+            radius: units.gu(1.5)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(1.5)
+                anchors.rightMargin: units.gu(1.5)
+                spacing: units.gu(1)
+
+                TextField {
+                    id: composer
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    placeholderText: i18n.tr("Type a message...")
+                    enabled: !chatPage.isResponding
+                    onAccepted: chatPage.sendMessage()
+                }
+
+                Button {
+                    id: sendButton
+                    Layout.preferredWidth: units.gu(10)
+                    Layout.preferredHeight: units.gu(5)
+                    Layout.alignment: Qt.AlignVCenter
+                    text: chatPage.isResponding ? i18n.tr("...") : i18n.tr("Send")
+                    color: (chatPage.isResponding || !composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : "#E95420"
+                    enabled: !chatPage.isResponding && composer.text && composer.text.trim().length > 0
+                    onClicked: chatPage.sendMessage()
+                }
             }
         }
     }
