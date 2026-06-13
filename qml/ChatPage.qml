@@ -11,6 +11,8 @@ import Lomiri.Components 1.3
 
 Page {
     id: chatPage
+    signal toggleSidebar()
+
     header: PageHeader {
         id: chatHeader
         title: i18n.tr("Chat")
@@ -19,8 +21,8 @@ Page {
             Action {
                 iconName: "navigation-menu"
                 text: i18n.tr("Menu")
-                visible: (typeof root !== 'undefined') && (root.width < units.gu(60))
-                onTriggered: root.sidebarOpen = !root.sidebarOpen
+                visible: chatPage.width < units.gu(60)
+                onTriggered: chatPage.toggleSidebar()
             }
         ]
     }
@@ -164,7 +166,10 @@ Page {
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        anchors.top: chatHeader.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.margins: units.gu(1.5)
         spacing: units.gu(1)
 

@@ -11,6 +11,8 @@ import Lomiri.Components 1.3
 
 Page {
     id: downloadPage
+    signal toggleSidebar()
+
     header: PageHeader {
         id: downloadHeader
         title: i18n.tr("Download Models")
@@ -19,8 +21,8 @@ Page {
             Action {
                 iconName: "navigation-menu"
                 text: i18n.tr("Menu")
-                visible: (typeof root !== 'undefined') && (root.width < units.gu(60))
-                onTriggered: root.sidebarOpen = !root.sidebarOpen
+                visible: downloadPage.width < units.gu(60)
+                onTriggered: downloadPage.toggleSidebar()
             }
         ]
     }
@@ -212,8 +214,17 @@ Page {
     onBackendReadyChanged: if (backendReady) refreshDownloadedModels()
     onVisibleChanged: if (visible && backendReady) refreshDownloadedModels()
 
-    Flickable {
+    Rectangle {
         anchors.fill: parent
+        color: "#f5f5f7"
+        z: -1
+    }
+
+    Flickable {
+        anchors.top: downloadHeader.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         contentWidth: width
         contentHeight: cardsColumn.height + units.gu(4)
         clip: true
@@ -234,9 +245,9 @@ Page {
 
                 delegate: Rectangle {
                     width: cardsColumn.width
-                    color: "#f7f7f7"
-                    border.color: "#d7d7d7"
-                    radius: units.gu(1)
+                    color: "#FFFFFF"
+                    border.color: "#E2E8F0"
+                    radius: units.gu(1.5)
                     implicitHeight: cardLayout.implicitHeight + units.gu(3)
 
                     ColumnLayout {

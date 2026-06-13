@@ -103,6 +103,7 @@ MainView {
                 model: root.selectedModel
                 temperature: root.temperature
                 maxTokens: root.maxTokens
+                onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
             DownloadPage {
@@ -111,6 +112,7 @@ MainView {
                 visible: root.currentTabIndex === 1
                 python: python
                 backendReady: root.backendReady
+                onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
             SettingsPage {
@@ -126,6 +128,7 @@ MainView {
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
                 onClearChat: chatPage.clearHistory()
+                onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
         }
     }
