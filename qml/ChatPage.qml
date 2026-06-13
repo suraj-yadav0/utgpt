@@ -106,19 +106,21 @@ Page {
     Connections {
         target: python
 
-        function onReceived(data) {
-            if (!data || !data.event || !data.payload) {
+        function onReceived(result) {
+            console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
+            if (!result || !result.event || !result.payload) {
                 return
             }
 
-            if (data.payload.requestId !== pendingRequestId) {
+            if (result.payload.requestId !== pendingRequestId) {
+                console.log("QML_LOG: Request ID mismatch: " + result.payload.requestId + " != " + pendingRequestId)
                 return
             }
 
-            if (data.event === "inference_token") {
-                chatPage.appendAssistantText(data.payload.text)
-            } else if (data.event === "inference_done") {
-                chatPage.finishResponse(data.payload.ok, data.payload.error)
+            if (result.event === "inference_token") {
+                chatPage.appendAssistantText(result.payload.text)
+            } else if (result.event === "inference_done") {
+                chatPage.finishResponse(result.payload.ok, result.payload.error)
                 pendingRequestId = ""
             }
         }

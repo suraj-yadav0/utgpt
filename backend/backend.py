@@ -14,6 +14,7 @@ import platform
 import tarfile
 import io
 import time
+import sys
 
 def _urlopen(req, timeout=60):
     try:
@@ -459,14 +460,17 @@ def clear_partial_download(filename):
 
 
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
+    print("UTGPT_LOG: Entering run_inference with model={0}, prompt={1}".format(model_filename, user_message), file=sys.stderr, flush=True)
     prompt = "User: {0}\nAssistant:".format(user_message)
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
+        print("UTGPT_LOG: Error - No model selected", file=sys.stderr, flush=True)
         _emit_done(done_callback, ok=False, error_message="No model selected.")
         return False
 
     if not os.path.exists(model_path):
+        print("UTGPT_LOG: Error - Model file not found at {0}".format(model_path), file=sys.stderr, flush=True)
         _emit_done(done_callback, ok=False, error_message="Model file not found: {0}".format(model_filename))
         return False
 
@@ -476,11 +480,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             error_msg = "Missing llama-cli. Downloader error: " + str(LLAMA_CLI_ERROR)
         else:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
+        print("UTGPT_LOG: Error - llama-cli not found: {0}".format(error_msg), file=sys.stderr, flush=True)
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
     process = None
     try:
+        print("UTGPT_LOG: Launching llama-cli: {0}".format(cli_path), file=sys.stderr, flush=True)
         process = subprocess.Popen(
             [
                 cli_path,
@@ -499,6 +505,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             bufsize=1
         )
         _register_process(process)
+        print("UTGPT_LOG: llama-cli launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
 
         output_buffer = ""
         started = False
@@ -513,11 +520,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             
             if not started:
                 if "Assistant:" in output_buffer:
+                    print("UTGPT_LOG: Detected 'Assistant:' boundary, starting token stream", file=sys.stderr, flush=True)
                     output_buffer = ""
                     started = True
                 continue
                 
             if "[ Prompt:" in output_buffer:
+                print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
                 break
                 
             if len(output_buffer) > 20:
@@ -535,9 +544,12 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             if not has_emitted_content:
                 remaining = remaining.lstrip()
             if remaining:
+                print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
                 _emit_token(token_callback, remaining)
 
+        print("UTGPT_LOG: Waiting for llama-cli process to exit", file=sys.stderr, flush=True)
         exit_code = process.wait()
+        print("UTGPT_LOG: llama-cli exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
         if exit_code != 0:
             _emit_done(done_callback, ok=False, error_message="llama-cli exited with status {0}".format(exit_code))
             return False
@@ -545,6 +557,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
         _emit_done(done_callback, ok=True, error_message="")
         return True
     except Exception as error:  # pragma: no cover - exercised from app runtime
+        print("UTGPT_LOG: Exception in run_inference: {0}".format(error), file=sys.stderr, flush=True)
         _terminate_process(process)
         _emit_done(done_callback, ok=False, error_message=str(error))
         return False
