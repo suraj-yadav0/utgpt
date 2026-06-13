@@ -11,7 +11,19 @@ import Lomiri.Components 1.3
 
 Page {
     id: downloadPage
-    title: i18n.tr("Download Models")
+    header: PageHeader {
+        id: downloadHeader
+        title: i18n.tr("Download Models")
+        leadingActionBar.numberOfSlots: 1
+        leadingActionBar.actions: [
+            Action {
+                iconName: "navigation-menu"
+                text: i18n.tr("Menu")
+                visible: (typeof root !== 'undefined') && (root.width < units.gu(60))
+                onTriggered: root.sidebarOpen = !root.sidebarOpen
+            }
+        ]
+    }
 
     property var python
     property bool backendReady: false

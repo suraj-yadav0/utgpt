@@ -11,7 +11,19 @@ import Lomiri.Components 1.3
 
 Page {
     id: chatPage
-    title: i18n.tr("Chat")
+    header: PageHeader {
+        id: chatHeader
+        title: i18n.tr("Chat")
+        leadingActionBar.numberOfSlots: 1
+        leadingActionBar.actions: [
+            Action {
+                iconName: "navigation-menu"
+                text: i18n.tr("Menu")
+                visible: (typeof root !== 'undefined') && (root.width < units.gu(60))
+                onTriggered: root.sidebarOpen = !root.sidebarOpen
+            }
+        ]
+    }
 
     property var python
     property bool backendReady: false

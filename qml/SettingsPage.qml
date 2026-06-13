@@ -12,7 +12,19 @@ import Lomiri.Components 1.3
 
 Page {
     id: settingsPage
-    title: i18n.tr("Settings")
+    header: PageHeader {
+        id: settingsHeader
+        title: i18n.tr("Settings")
+        leadingActionBar.numberOfSlots: 1
+        leadingActionBar.actions: [
+            Action {
+                iconName: "navigation-menu"
+                text: i18n.tr("Menu")
+                visible: (typeof root !== 'undefined') && (root.width < units.gu(60))
+                onTriggered: root.sidebarOpen = !root.sidebarOpen
+            }
+        ]
+    }
 
     property var python
     property bool backendReady: false

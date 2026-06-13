@@ -27,6 +27,11 @@ MainView {
     property string selectedModel: ""
     property real temperature: 0.7
     property int maxTokens: 200
+    property bool sidebarOpen: false
+
+    onWidthChanged: {
+        sidebarOpen = (width >= units.gu(60))
+    }
 
     function showError(message) {
         backendError = message
@@ -77,7 +82,11 @@ MainView {
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        id: mainLayout
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.left: (root.width < units.gu(60)) ? parent.left : sidebar.right
         visible: root.backendReady
         spacing: 0
 
@@ -119,39 +128,188 @@ MainView {
                 onClearChat: chatPage.clearHistory()
             }
         }
+    }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: visible ? units.gu(8) : 0
-            visible: !Qt.inputMethod.visible
-            color: "#efefef"
-            border.color: "#d0d0d0"
+    // Semi-transparent overlay to close sidebar on mobile when tapping outside
+    Rectangle {
+        id: sidebarOverlay
+        anchors.fill: parent
+        color: "black"
+        opacity: 0.4
+        z: 99
+        visible: (root.width < units.gu(60)) && root.sidebarOpen
 
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.sidebarOpen = false
+        }
+    }
+
+    // Sidebar on the left
+    Rectangle {
+        id: sidebar
+        z: 100
+        height: parent.height
+        width: units.gu(24)
+        color: "#2C3E50"
+
+        x: (root.width < units.gu(60)) ? (root.sidebarOpen ? 0 : -width) : 0
+        Behavior on x {
+            NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: units.gu(1.5)
+            spacing: units.gu(2)
+
+            // Header/Logo
             RowLayout {
-                anchors.fill: parent
-                anchors.margins: units.gu(1)
+                spacing: units.gu(1)
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: units.gu(1)
+
+                Label {
+                    text: "\uD83E\uDD16"
+                    fontSize: "large"
+                }
+
+                Label {
+                    text: "UTGPT"
+                    color: "white"
+                    font.bold: true
+                    fontSize: "large"
+                }
+            }
+
+            // Separator
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: "#34495E"
+            }
+
+            // Tabs / Pages List
+            Column {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 spacing: units.gu(1)
 
-                Button {
-                    Layout.fillWidth: true
-                    text: i18n.tr("Chat")
-                    color: root.tabButtonColor(0)
-                    onClicked: root.currentTabIndex = 0
+                // Chat Tab
+                Rectangle {
+                    width: parent.width
+                    height: units.gu(5.5)
+                    color: root.currentTabIndex === 0 ? "#1A252F" : "transparent"
+                    radius: units.gu(0.8)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(1.5)
+                        spacing: units.gu(1.5)
+
+                        Label {
+                            text: "\uD83D\uDCAC"
+                            color: root.currentTabIndex === 0 ? "#E95420" : "#BDC3C7"
+                            fontSize: "medium"
+                        }
+
+                        Label {
+                            text: i18n.tr("Chat")
+                            color: root.currentTabIndex === 0 ? "white" : "#BDC3C7"
+                            font.bold: root.currentTabIndex === 0
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.currentTabIndex = 0
+                            if (root.width < units.gu(60)) {
+                                root.sidebarOpen = false
+                            }
+                        }
+                    }
                 }
 
-                Button {
-                    Layout.fillWidth: true
-                    text: i18n.tr("Models")
-                    color: root.tabButtonColor(1)
-                    onClicked: root.currentTabIndex = 1
+                // Models Tab
+                Rectangle {
+                    width: parent.width
+                    height: units.gu(5.5)
+                    color: root.currentTabIndex === 1 ? "#1A252F" : "transparent"
+                    radius: units.gu(0.8)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(1.5)
+                        spacing: units.gu(1.5)
+
+                        Label {
+                            text: "\uD83D\uDCE5"
+                            color: root.currentTabIndex === 1 ? "#E95420" : "#BDC3C7"
+                            fontSize: "medium"
+                        }
+
+                        Label {
+                            text: i18n.tr("Models")
+                            color: root.currentTabIndex === 1 ? "white" : "#BDC3C7"
+                            font.bold: root.currentTabIndex === 1
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.currentTabIndex = 1
+                            if (root.width < units.gu(60)) {
+                                root.sidebarOpen = false
+                            }
+                        }
+                    }
                 }
 
-                Button {
-                    Layout.fillWidth: true
-                    text: i18n.tr("Settings")
-                    color: root.tabButtonColor(2)
-                    onClicked: root.currentTabIndex = 2
+                // Settings Tab
+                Rectangle {
+                    width: parent.width
+                    height: units.gu(5.5)
+                    color: root.currentTabIndex === 2 ? "#1A252F" : "transparent"
+                    radius: units.gu(0.8)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(1.5)
+                        spacing: units.gu(1.5)
+
+                        Label {
+                            text: "\u2699\uFE0F"
+                            color: root.currentTabIndex === 2 ? "#E95420" : "#BDC3C7"
+                            fontSize: "medium"
+                        }
+
+                        Label {
+                            text: i18n.tr("Settings")
+                            color: root.currentTabIndex === 2 ? "white" : "#BDC3C7"
+                            font.bold: root.currentTabIndex === 2
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            root.currentTabIndex = 2
+                            if (root.width < units.gu(60)) {
+                                root.sidebarOpen = false
+                            }
+                        }
+                    }
                 }
+            }
+
+            // Footer
+            Label {
+                Layout.alignment: Qt.AlignHCenter
+                text: "v0.1.0"
+                color: "#7F8C8D"
+                fontSize: "x-small"
             }
         }
     }
