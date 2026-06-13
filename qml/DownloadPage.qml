@@ -157,6 +157,54 @@ Page {
             requestId: ""
         }
         ListElement {
+            name: "Llama-3.2-1B"
+            filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+            size: "~800 MB"
+            description: "Ultra-fast Meta assistant"
+            url: "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Llama-3.2-3B"
+            filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            size: "~2.0 GB"
+            description: "Meta's smart assistant"
+            url: "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Gemma-2-2B"
+            filename: "gemma-2-2b-it-Q4_K_M.gguf"
+            size: "~1.7 GB"
+            description: "Google's lightweight assistant"
+            url: "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Phi-3-mini-4K"
+            filename: "Phi-3-mini-4k-instruct-Q4_K_M.gguf"
+            size: "~2.2 GB"
+            description: "Microsoft reasoning model"
+            url: "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
             name: "TinyLlama-1.1B"
             filename: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
             size: "~700 MB"
