@@ -8,6 +8,7 @@
 import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
+import QtQuick.Controls 2.2 as QQC2
 
 Page {
     id: chatPage
@@ -173,64 +174,100 @@ Page {
         anchors.margins: units.gu(1.5)
         spacing: units.gu(1)
 
-        // Status pill for selected model
+        // Model Selection Bar
         Rectangle {
-            id: statusPill
+            id: modelSelectionBar
             Layout.fillWidth: true
-            Layout.preferredHeight: units.gu(5)
-            color: chatPage.model ? "#EBF8FF" : "#FFF5F5"
-            border.color: chatPage.model ? "#BEE3F8" : "#FEB2B2"
+            Layout.preferredHeight: units.gu(6.5)
+            color: "#FFFFFF"
+            border.color: "#E2E8F0"
             border.width: 1
-            radius: units.gu(1)
+            radius: units.gu(1.5)
 
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: units.gu(1.5)
                 anchors.rightMargin: units.gu(1.5)
-                spacing: units.gu(1)
+                spacing: units.gu(1.5)
 
+                // Brand/Warning Icon
                 Rectangle {
-                    width: units.gu(1)
-                    height: units.gu(1)
-                    radius: width / 2
-                    color: chatPage.model ? "#3182CE" : "#E53E3E"
+                    width: units.gu(3.5)
+                    height: units.gu(3.5)
+                    radius: units.gu(1)
+                    color: root.availableModels.length > 0 ? "#FFEBE6" : "#FFF5F5"
                     Layout.alignment: Qt.AlignVCenter
+
+                    Icon {
+                        anchors.centerIn: parent
+                        name: root.availableModels.length > 0 ? "message" : "dialog-warning"
+                        width: units.gu(2.2)
+                        height: units.gu(2.2)
+                        color: root.availableModels.length > 0 ? "#E95420" : "#E53E3E"
+                    }
                 }
 
-                Label {
+                // If models are available, show the ComboBox to switch
+                RowLayout {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    text: {
-                        if (chatPage.model) {
-                            return i18n.tr("Model: ") + chatPage.model
-                        }
-                        if (settingsPage.availableModels.length === 0) {
-                            return i18n.tr("No models downloaded - tap to download one")
-                        }
-                        return i18n.tr("No active model - tap to select in Settings")
+                    visible: root.availableModels.length > 0
+                    spacing: units.gu(1)
+
+                    Label {
+                        text: i18n.tr("Model:")
+                        font.bold: true
+                        color: "#4A5568"
+                        fontSize: "small"
+                        Layout.alignment: Qt.AlignVCenter
                     }
-                    color: chatPage.model ? "#2B6CB0" : "#9B2C2C"
-                    font.bold: true
-                    fontSize: "small"
-                    elide: Text.ElideRight
+
+                    QQC2.ComboBox {
+                        id: chatModelSelector
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        model: root.availableModels
+                        currentIndex: root.availableModels.indexOf(root.selectedModel)
+
+                        onActivated: {
+                            if (currentIndex >= 0 && currentIndex < root.availableModels.length) {
+                                root.selectedModel = root.availableModels[currentIndex]
+                            }
+                        }
+                    }
                 }
 
-                Label {
-                    text: "\u2192" // Right arrow
-                    color: chatPage.model ? "#3182CE" : "#E53E3E"
-                    fontSize: "small"
+                // If no models downloaded, show helper text to download one
+                RowLayout {
+                    Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
+                    visible: root.availableModels.length === 0
+                    spacing: units.gu(1)
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: i18n.tr("No models downloaded - tap to download one")
+                        color: "#E53E3E"
+                        font.bold: true
+                        fontSize: "small"
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        text: "\u2192" // Right arrow
+                        color: "#E53E3E"
+                        fontSize: "small"
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
             }
 
+            // Clicking when no models are available redirects to the Models tab
             MouseArea {
                 anchors.fill: parent
+                enabled: root.availableModels.length === 0
                 onClicked: {
-                    if (!chatPage.model && settingsPage.availableModels.length === 0) {
-                        root.currentTabIndex = 1 // Go to Models tab
-                    } else {
-                        root.currentTabIndex = 2 // Go to Settings tab
-                    }
+                    root.currentTabIndex = 1 // Go to Models tab
                 }
             }
         }
@@ -314,10 +351,12 @@ Page {
                 color: "#FFEBE6"
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                Label {
+                Icon {
                     anchors.centerIn: parent
-                    text: "\uD83D\uDCAC" // Chat speech bubble emoji
-                    fontSize: "large"
+                    name: "message"
+                    width: units.gu(4)
+                    height: units.gu(4)
+                    color: "#E95420"
                 }
             }
 

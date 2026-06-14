@@ -25,12 +25,39 @@ MainView {
     property string backendError: ""
     property int currentTabIndex: 0
     property string selectedModel: ""
+    property var availableModels: []
     property real temperature: 0.7
     property int maxTokens: 200
     property bool sidebarOpen: false
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
+    }
+
+    onBackendReadyChanged: {
+        if (backendReady) {
+            refreshModels()
+        }
+    }
+
+    onCurrentTabIndexChanged: {
+        refreshModels()
+    }
+
+    function refreshModels() {
+        if (!backendReady) return;
+        python.call("backend.list_models", [], function(result) {
+            root.availableModels = result || []
+            if (root.availableModels.length === 0) {
+                root.selectedModel = ""
+                return
+            }
+
+            var selectedIndex = root.availableModels.indexOf(root.selectedModel)
+            if (selectedIndex < 0) {
+                root.selectedModel = root.availableModels[0]
+            }
+        })
     }
 
     function showError(message) {
@@ -153,8 +180,8 @@ MainView {
         id: sidebar
         z: 100
         height: parent.height
-        width: units.gu(24)
-        color: "#2C3E50"
+        width: units.gu(26)
+        color: "#1E1E24" // Sleek dark charcoal/slate gray
 
         x: (root.width < units.gu(60)) ? (root.sidebarOpen ? 0 : -width) : 0
         Behavior on x {
@@ -163,46 +190,57 @@ MainView {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: units.gu(1.5)
-            spacing: units.gu(2)
+            anchors.margins: 0
+            spacing: 0
 
             // Header/Logo
-            RowLayout {
-                spacing: units.gu(1)
-                Layout.alignment: Qt.AlignHCenter
-                Layout.topMargin: units.gu(1)
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: units.gu(8)
+                color: "transparent"
 
-                Label {
-                    text: "\uD83E\uDD16"
-                    fontSize: "large"
-                }
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: units.gu(1.5)
 
-                Label {
-                    text: "UTGPT"
-                    color: "white"
-                    font.bold: true
-                    fontSize: "large"
+                    Icon {
+                        source: Qt.resolvedUrl("../assets/logo.svg")
+                        width: units.gu(4)
+                        height: units.gu(4)
+                        color: "#E95420"
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    Label {
+                        text: "UTGPT"
+                        color: "white"
+                        font.bold: true
+                        fontSize: "large"
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
             }
 
-            // Separator
+            // Slim elegant divider
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: "#34495E"
+                color: "#2D2D35"
             }
 
-            // Tabs / Pages List
+            // Navigation Tabs
             Column {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: units.gu(1)
+                Layout.topMargin: units.gu(2)
+                spacing: units.gu(0.8)
 
                 // Chat Tab
                 Rectangle {
-                    width: parent.width
+                    width: parent.width - units.gu(2)
                     height: units.gu(5.5)
-                    color: root.currentTabIndex === 0 ? "#1A252F" : "transparent"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: root.currentTabIndex === 0 ? "#2D2D35" : "transparent"
                     radius: units.gu(0.8)
 
                     RowLayout {
@@ -210,17 +248,32 @@ MainView {
                         anchors.leftMargin: units.gu(1.5)
                         spacing: units.gu(1.5)
 
-                        Label {
-                            text: "\uD83D\uDCAC"
-                            color: root.currentTabIndex === 0 ? "#E95420" : "#BDC3C7"
-                            fontSize: "medium"
+                        Icon {
+                            name: "message"
+                            width: units.gu(2.2)
+                            height: units.gu(2.2)
+                            color: root.currentTabIndex === 0 ? "#E95420" : "#8A8A8F"
+                            Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Chat")
                             color: root.currentTabIndex === 0 ? "white" : "#BDC3C7"
                             font.bold: root.currentTabIndex === 0
+                            fontSize: "medium"
+                            Layout.alignment: Qt.AlignVCenter
                         }
+                    }
+
+                    // Orange indicator pill on the left
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: units.gu(0.4)
+                        height: units.gu(3)
+                        color: "#E95420"
+                        visible: root.currentTabIndex === 0
+                        radius: width / 2
                     }
 
                     MouseArea {
@@ -236,9 +289,10 @@ MainView {
 
                 // Models Tab
                 Rectangle {
-                    width: parent.width
+                    width: parent.width - units.gu(2)
                     height: units.gu(5.5)
-                    color: root.currentTabIndex === 1 ? "#1A252F" : "transparent"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: root.currentTabIndex === 1 ? "#2D2D35" : "transparent"
                     radius: units.gu(0.8)
 
                     RowLayout {
@@ -246,17 +300,32 @@ MainView {
                         anchors.leftMargin: units.gu(1.5)
                         spacing: units.gu(1.5)
 
-                        Label {
-                            text: "\uD83D\uDCE5"
-                            color: root.currentTabIndex === 1 ? "#E95420" : "#BDC3C7"
-                            fontSize: "medium"
+                        Icon {
+                            name: "package-x-generic-symbolic"
+                            width: units.gu(2.2)
+                            height: units.gu(2.2)
+                            color: root.currentTabIndex === 1 ? "#E95420" : "#8A8A8F"
+                            Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Models")
                             color: root.currentTabIndex === 1 ? "white" : "#BDC3C7"
                             font.bold: root.currentTabIndex === 1
+                            fontSize: "medium"
+                            Layout.alignment: Qt.AlignVCenter
                         }
+                    }
+
+                    // Orange indicator pill on the left
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: units.gu(0.4)
+                        height: units.gu(3)
+                        color: "#E95420"
+                        visible: root.currentTabIndex === 1
+                        radius: width / 2
                     }
 
                     MouseArea {
@@ -272,9 +341,10 @@ MainView {
 
                 // Settings Tab
                 Rectangle {
-                    width: parent.width
+                    width: parent.width - units.gu(2)
                     height: units.gu(5.5)
-                    color: root.currentTabIndex === 2 ? "#1A252F" : "transparent"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    color: root.currentTabIndex === 2 ? "#2D2D35" : "transparent"
                     radius: units.gu(0.8)
 
                     RowLayout {
@@ -282,17 +352,32 @@ MainView {
                         anchors.leftMargin: units.gu(1.5)
                         spacing: units.gu(1.5)
 
-                        Label {
-                            text: "\u2699\uFE0F"
-                            color: root.currentTabIndex === 2 ? "#E95420" : "#BDC3C7"
-                            fontSize: "medium"
+                        Icon {
+                            name: "settings"
+                            width: units.gu(2.2)
+                            height: units.gu(2.2)
+                            color: root.currentTabIndex === 2 ? "#E95420" : "#8A8A8F"
+                            Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Settings")
                             color: root.currentTabIndex === 2 ? "white" : "#BDC3C7"
                             font.bold: root.currentTabIndex === 2
+                            fontSize: "medium"
+                            Layout.alignment: Qt.AlignVCenter
                         }
+                    }
+
+                    // Orange indicator pill on the left
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: units.gu(0.4)
+                        height: units.gu(3)
+                        color: "#E95420"
+                        visible: root.currentTabIndex === 2
+                        radius: width / 2
                     }
 
                     MouseArea {
@@ -308,11 +393,17 @@ MainView {
             }
 
             // Footer
-            Label {
-                Layout.alignment: Qt.AlignHCenter
-                text: "v0.1.0"
-                color: "#7F8C8D"
-                fontSize: "x-small"
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: units.gu(6)
+                color: "transparent"
+
+                Label {
+                    anchors.centerIn: parent
+                    text: "v0.1.0"
+                    color: "#5C5C64"
+                    fontSize: "x-small"
+                }
             }
         }
     }

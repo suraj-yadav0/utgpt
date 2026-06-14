@@ -118,6 +118,7 @@ Page {
             modelsList.setProperty(index, "progress", 0.0)
             modelsList.setProperty(index, "requestId", "")
             downloadPage.refreshDownloadedModels()
+            root.refreshModels()
         })
     }
 
@@ -125,6 +126,7 @@ Page {
         var item = modelsList.get(index)
         python.call("backend.delete_model", [item.filename], function(result) {
             downloadPage.refreshDownloadedModels()
+            root.refreshModels()
         })
     }
 
@@ -150,6 +152,54 @@ Page {
             size: "~1 GB"
             description: "Great multilingual"
             url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Llama-3.2-1B"
+            filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+            size: "~800 MB"
+            description: "Ultra-fast Meta assistant"
+            url: "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Llama-3.2-3B"
+            filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            size: "~2.0 GB"
+            description: "Meta's smart assistant"
+            url: "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Gemma-2-2B"
+            filename: "gemma-2-2b-it-Q4_K_M.gguf"
+            size: "~1.7 GB"
+            description: "Google's lightweight assistant"
+            url: "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
+            progress: 0.0
+            downloading: false
+            paused: false
+            ready: false
+            requestId: ""
+        }
+        ListElement {
+            name: "Phi-3-mini-4K"
+            filename: "Phi-3-mini-4k-instruct-Q4_K_M.gguf"
+            size: "~2.2 GB"
+            description: "Microsoft reasoning model"
+            url: "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
             progress: 0.0
             downloading: false
             paused: false
@@ -201,6 +251,7 @@ Page {
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
                     modelsList.setProperty(index, "ready", true)
+                    root.refreshModels()
                 } else if (data.event === "download_error") {
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
@@ -296,9 +347,23 @@ Page {
                             spacing: units.gu(1)
                             visible: model.ready
 
-                            Label {
-                                text: "\u2713 Ready"
-                                color: "#2e7d32"
+                            RowLayout {
+                                spacing: units.gu(0.5)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Icon {
+                                    name: "ok"
+                                    width: units.gu(1.8)
+                                    height: units.gu(1.8)
+                                    color: "#2e7d32"
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Label {
+                                    text: i18n.tr("Ready")
+                                    color: "#2e7d32"
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
                             }
 
                             Button {

@@ -34,27 +34,12 @@ Page {
     property real temperature: 0.7
     property int maxTokens: 200
     property string freeStorage: i18n.tr("Checking storage...")
-    property var availableModels: []
+    property var availableModels: root.availableModels
 
     signal clearChat()
 
     function refreshModels() {
-        python.call("backend.list_models", [], function(result) {
-            availableModels = result || []
-            if (availableModels.length === 0) {
-                selectedModel = ""
-                modelSelector.currentIndex = -1
-                return
-            }
-
-            var selectedIndex = availableModels.indexOf(selectedModel)
-            if (selectedIndex < 0) {
-                selectedIndex = 0
-            }
-
-            modelSelector.currentIndex = selectedIndex
-            selectedModel = availableModels[selectedIndex]
-        })
+        root.refreshModels()
     }
 
     function refreshStorage() {
@@ -144,6 +129,7 @@ Page {
                         width: parent.width
                         visible: settingsPage.availableModels.length > 0
                         model: settingsPage.availableModels
+                        currentIndex: settingsPage.availableModels.indexOf(settingsPage.selectedModel)
 
                         onActivated: {
                             if (currentIndex >= 0 && currentIndex < settingsPage.availableModels.length) {
