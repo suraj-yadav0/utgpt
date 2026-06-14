@@ -190,18 +190,20 @@ Page {
                 anchors.rightMargin: units.gu(1.5)
                 spacing: units.gu(1.5)
 
-                // Robot Emoji Icon
+                // Brand/Warning Icon
                 Rectangle {
                     width: units.gu(3.5)
                     height: units.gu(3.5)
                     radius: units.gu(1)
-                    color: root.availableModels.length > 0 ? "#EBF8FF" : "#FFF5F5"
+                    color: root.availableModels.length > 0 ? "#FFEBE6" : "#FFF5F5"
                     Layout.alignment: Qt.AlignVCenter
 
-                    Label {
+                    Icon {
                         anchors.centerIn: parent
-                        text: root.availableModels.length > 0 ? "🤖" : "⚠️"
-                        fontSize: "medium"
+                        name: root.availableModels.length > 0 ? "message" : "dialog-warning"
+                        width: units.gu(2.2)
+                        height: units.gu(2.2)
+                        color: root.availableModels.length > 0 ? "#E95420" : "#E53E3E"
                     }
                 }
 
@@ -349,10 +351,12 @@ Page {
                 color: "#FFEBE6"
                 anchors.horizontalCenter: parent.horizontalCenter
 
-                Label {
+                Icon {
                     anchors.centerIn: parent
-                    text: "\uD83D\uDCAC" // Chat speech bubble emoji
-                    fontSize: "large"
+                    name: "message"
+                    width: units.gu(4)
+                    height: units.gu(4)
+                    color: "#E95420"
                 }
             }
 

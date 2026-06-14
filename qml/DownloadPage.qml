@@ -347,9 +347,23 @@ Page {
                             spacing: units.gu(1)
                             visible: model.ready
 
-                            Label {
-                                text: "\u2713 Ready"
-                                color: "#2e7d32"
+                            RowLayout {
+                                spacing: units.gu(0.5)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Icon {
+                                    name: "ok"
+                                    width: units.gu(1.8)
+                                    height: units.gu(1.8)
+                                    color: "#2e7d32"
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Label {
+                                    text: i18n.tr("Ready")
+                                    color: "#2e7d32"
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
                             }
 
                             Button {
