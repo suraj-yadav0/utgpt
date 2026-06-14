@@ -484,87 +484,91 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
-    process = None
-    try:
-        print("UTGPT_LOG: Launching llama-cli: {0}".format(cli_path), file=sys.stderr, flush=True)
-        process = subprocess.Popen(
-            [
-                cli_path,
-                "-m", model_path,
-                "-p", prompt,
-                "--temp", str(float(temperature)),
-                "-n", str(int(max_tokens)),
-                "--no-display-prompt",
-                "-st",
-                "--simple-io"
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1
-        )
-        _register_process(process)
-        print("UTGPT_LOG: llama-cli launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
+    def worker():
+        process = None
+        try:
+            print("UTGPT_LOG: Launching llama-cli: {0}".format(cli_path), file=sys.stderr, flush=True)
+            process = subprocess.Popen(
+                [
+                    cli_path,
+                    "-m", model_path,
+                    "-p", prompt,
+                    "--temp", str(float(temperature)),
+                    "-n", str(int(max_tokens)),
+                    "--no-display-prompt",
+                    "-st",
+                    "--simple-io"
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            _register_process(process)
+            print("UTGPT_LOG: llama-cli launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
 
-        output_buffer = ""
-        started = False
-        has_emitted_content = False
-        
-        while True:
-            char = process.stdout.read(1)
-            if not char:
-                break
+            output_buffer = ""
+            started = False
+            has_emitted_content = False
             
-            output_buffer += char
-            
-            if not started:
-                if "Assistant:" in output_buffer:
-                    print("UTGPT_LOG: Detected 'Assistant:' boundary, starting token stream", file=sys.stderr, flush=True)
-                    output_buffer = ""
-                    started = True
-                continue
+            while True:
+                char = process.stdout.read(1)
+                if not char:
+                    break
                 
-            if "[ Prompt:" in output_buffer:
-                print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
-                break
+                output_buffer += char
                 
-            if len(output_buffer) > 20:
-                emit_char = output_buffer[0]
-                output_buffer = output_buffer[1:]
+                if not started:
+                    if "Assistant:" in output_buffer:
+                        print("UTGPT_LOG: Detected 'Assistant:' boundary, starting token stream", file=sys.stderr, flush=True)
+                        output_buffer = ""
+                        started = True
+                    continue
+                    
+                if "[ Prompt:" in output_buffer:
+                    print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
+                    break
+                    
+                if len(output_buffer) > 20:
+                    emit_char = output_buffer[0]
+                    output_buffer = output_buffer[1:]
+                    if not has_emitted_content:
+                        if emit_char.strip() == "":
+                            continue
+                        else:
+                            has_emitted_content = True
+                    _emit_token(token_callback, emit_char)
+
+            if started and output_buffer:
+                remaining = output_buffer.split("[ Prompt:")[0]
                 if not has_emitted_content:
-                    if emit_char.strip() == "":
-                        continue
-                    else:
-                        has_emitted_content = True
-                _emit_token(token_callback, emit_char)
+                    remaining = remaining.lstrip()
+                if remaining:
+                    print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
+                    _emit_token(token_callback, remaining)
 
-        if started and output_buffer:
-            remaining = output_buffer.split("[ Prompt:")[0]
-            if not has_emitted_content:
-                remaining = remaining.lstrip()
-            if remaining:
-                print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
-                _emit_token(token_callback, remaining)
+            print("UTGPT_LOG: Waiting for llama-cli process to exit", file=sys.stderr, flush=True)
+            exit_code = process.wait()
+            print("UTGPT_LOG: llama-cli exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
+            if exit_code != 0:
+                _emit_done(done_callback, ok=False, error_message="llama-cli exited with status {0}".format(exit_code))
+                return
 
-        print("UTGPT_LOG: Waiting for llama-cli process to exit", file=sys.stderr, flush=True)
-        exit_code = process.wait()
-        print("UTGPT_LOG: llama-cli exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
-        if exit_code != 0:
-            _emit_done(done_callback, ok=False, error_message="llama-cli exited with status {0}".format(exit_code))
-            return False
+            _emit_done(done_callback, ok=True, error_message="")
+        except Exception as error:  # pragma: no cover - exercised from app runtime
+            print("UTGPT_LOG: Exception in run_inference: {0}".format(error), file=sys.stderr, flush=True)
+            _terminate_process(process)
+            _emit_done(done_callback, ok=False, error_message=str(error))
+        finally:
+            if process is not None and process.stdout is not None:
+                process.stdout.close()
+            _unregister_process(process)
 
-        _emit_done(done_callback, ok=True, error_message="")
-        return True
-    except Exception as error:  # pragma: no cover - exercised from app runtime
-        print("UTGPT_LOG: Exception in run_inference: {0}".format(error), file=sys.stderr, flush=True)
-        _terminate_process(process)
-        _emit_done(done_callback, ok=False, error_message=str(error))
-        return False
-    finally:
-        if process is not None and process.stdout is not None:
-            process.stdout.close()
-        _unregister_process(process)
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+    return True
 
 
 def get_hardcoded_models():
