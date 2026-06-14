@@ -207,81 +207,7 @@ Page {
         z: -1
     }
 
-    // Welcome placeholder View
-    Column {
-        id: welcomeView
-        anchors.centerIn: parent
-        width: parent.width - units.gu(6)
-        spacing: units.gu(2)
-        visible: messageModel.count === 0
 
-        Rectangle {
-            width: units.gu(8)
-            height: units.gu(8)
-            radius: units.gu(2)
-            color: "#FFEBE6"
-            anchors.horizontalCenter: parent.horizontalCenter
-
-            Icon {
-                anchors.centerIn: parent
-                name: "message"
-                width: units.gu(4)
-                height: units.gu(4)
-                color: "#E95420"
-            }
-        }
-
-        Label {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: i18n.tr("Welcome to UTGPT")
-            font.bold: true
-            fontSize: "large"
-            color: "#1E293B"
-        }
-
-        Label {
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            text: i18n.tr("Ask anything! Choose a model above or type a message to start the conversation.")
-            color: "#64748B"
-            fontSize: "small"
-        }
-
-        Column {
-            width: parent.width
-            spacing: units.gu(1)
-
-            Label {
-                text: i18n.tr("Try asking:")
-                color: "#94A3B8"
-                fontSize: "x-small"
-                font.bold: true
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
-
-            Button {
-                width: parent.width
-                text: i18n.tr("What is Ubuntu Touch?")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = text
-                    chatPage.sendMessage()
-                }
-            }
-
-            Button {
-                width: parent.width
-                text: i18n.tr("Explain QML in simple terms")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = text
-                    chatPage.sendMessage()
-                }
-            }
-        }
-    }
 
     ColumnLayout {
         anchors.top: chatHeader.bottom
@@ -554,6 +480,84 @@ Page {
                             chatPage.sendMessage()
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Welcome placeholder View
+    Column {
+        id: welcomeView
+        anchors.centerIn: parent
+        width: parent.width - units.gu(6)
+        spacing: units.gu(2)
+        visible: messageModel.count === 0
+
+        Rectangle {
+            width: units.gu(8)
+            height: units.gu(8)
+            radius: units.gu(2)
+            color: "#FFEBE6"
+            anchors.horizontalCenter: parent.horizontalCenter
+
+            Icon {
+                anchors.centerIn: parent
+                name: "message"
+                width: units.gu(4)
+                height: units.gu(4)
+                color: "#E95420"
+            }
+        }
+
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: i18n.tr("Welcome to UTGPT")
+            font.bold: true
+            fontSize: "large"
+            color: "#1E293B"
+        }
+
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            text: i18n.tr("Ask anything! Choose a model above or type a message to start the conversation.")
+            color: "#64748B"
+            fontSize: "small"
+        }
+
+        Column {
+            width: parent.width
+            spacing: units.gu(1)
+
+            Label {
+                text: i18n.tr("Try asking:")
+                color: "#94A3B8"
+                fontSize: "x-small"
+                font.bold: true
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Button {
+                id: q1
+                width: parent.width
+                text: i18n.tr("What is Ubuntu Touch?")
+                color: "#F1F5F9"
+                onClicked: {
+                    composer.text = q1.text
+                    chatPage.sendMessage()
+                }
+            }
+
+            Button {
+                id: q2
+                width: parent.width
+                text: i18n.tr("Explain QML in simple terms")
+                color: "#F1F5F9"
+                onClicked: {
+                    composer.text = q2.text
+                    chatPage.sendMessage()
                 }
             }
         }
