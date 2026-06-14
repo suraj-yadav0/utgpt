@@ -25,12 +25,39 @@ MainView {
     property string backendError: ""
     property int currentTabIndex: 0
     property string selectedModel: ""
+    property var availableModels: []
     property real temperature: 0.7
     property int maxTokens: 200
     property bool sidebarOpen: false
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
+    }
+
+    onBackendReadyChanged: {
+        if (backendReady) {
+            refreshModels()
+        }
+    }
+
+    onCurrentTabIndexChanged: {
+        refreshModels()
+    }
+
+    function refreshModels() {
+        if (!backendReady) return;
+        python.call("backend.list_models", [], function(result) {
+            root.availableModels = result || []
+            if (root.availableModels.length === 0) {
+                root.selectedModel = ""
+                return
+            }
+
+            var selectedIndex = root.availableModels.indexOf(root.selectedModel)
+            if (selectedIndex < 0) {
+                root.selectedModel = root.availableModels[0]
+            }
+        })
     }
 
     function showError(message) {

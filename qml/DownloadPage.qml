@@ -118,6 +118,7 @@ Page {
             modelsList.setProperty(index, "progress", 0.0)
             modelsList.setProperty(index, "requestId", "")
             downloadPage.refreshDownloadedModels()
+            root.refreshModels()
         })
     }
 
@@ -125,6 +126,7 @@ Page {
         var item = modelsList.get(index)
         python.call("backend.delete_model", [item.filename], function(result) {
             downloadPage.refreshDownloadedModels()
+            root.refreshModels()
         })
     }
 
@@ -249,6 +251,7 @@ Page {
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
                     modelsList.setProperty(index, "ready", true)
+                    root.refreshModels()
                 } else if (data.event === "download_error") {
                     modelsList.setProperty(index, "downloading", false)
                     modelsList.setProperty(index, "paused", false)
