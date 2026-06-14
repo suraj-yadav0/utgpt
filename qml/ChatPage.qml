@@ -35,6 +35,13 @@ Page {
     property int maxTokens: 200
     property bool isResponding: false
     property string pendingRequestId: ""
+    property bool userStopped: false
+
+    function stopInference() {
+        if (!isResponding) return;
+        userStopped = true
+        python.call("backend.stop_all_inference", [])
+    }
 
     function clearHistory() {
         messageModel.clear()
@@ -56,7 +63,7 @@ Page {
 
         var lastIndex = messageModel.count - 1
         var currentText = messageModel.get(lastIndex).text
-        if (currentText === "...") {
+        if (currentText === "..." || currentText.startsWith("Thinking")) {
             messageModel.setProperty(lastIndex, "text", chunk)
         } else {
             messageModel.setProperty(lastIndex, "text", currentText + chunk)
@@ -70,13 +77,16 @@ Page {
         if (!ok && messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
             var currentText = messageModel.get(lastIndex).text
-            var fallback = errorMessage && errorMessage.length > 0 ? errorMessage : "The model stopped unexpectedly."
-            if (currentText === "...") {
+            var fallback = userStopped ? i18n.tr("Generation stopped by user.") : (errorMessage && errorMessage.length > 0 ? errorMessage : "The model stopped unexpectedly.")
+            if (currentText === "..." || currentText.startsWith("Thinking")) {
                 messageModel.setProperty(lastIndex, "text", fallback)
+            } else if (userStopped) {
+                // Keep the generated text, do not append crash message
             } else {
                 messageModel.setProperty(lastIndex, "text", currentText + "\n" + fallback)
             }
         }
+        userStopped = false
     }
 
     function sendMessage() {
@@ -93,7 +103,7 @@ Page {
         }
 
         messageModel.append({ "role": "user", "text": trimmed })
-        messageModel.append({ "role": "assistant", "text": "..." })
+        messageModel.append({ "role": "assistant", "text": "Thinking" })
         composer.text = ""
         isResponding = true
         pendingRequestId = "chat-" + Date.now()
@@ -105,7 +115,7 @@ Page {
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
-                    if (lastIndex >= 0 && messageModel.get(lastIndex).text === "...") {
+                    if (lastIndex >= 0 && (messageModel.get(lastIndex).text === "..." || messageModel.get(lastIndex).text.startsWith("Thinking"))) {
                         finishResponse(false, "Unable to start inference.")
                     }
                 }
@@ -158,6 +168,37 @@ Page {
         interval: 150
         repeat: false
         onTriggered: chatPage.scrollToBottom()
+    }
+
+    Timer {
+        id: thinkingTimer
+        interval: 400
+        repeat: true
+        running: chatPage.isResponding && messageModel.count > 0 && 
+                 (messageModel.get(messageModel.count - 1).text.startsWith("Thinking") || 
+                  messageModel.get(messageModel.count - 1).text === "...")
+        
+        property int step: 0
+
+        onTriggered: {
+            if (messageModel.count === 0) return
+            var lastIndex = messageModel.count - 1
+            step = (step + 1) % 4
+            var dots = ""
+            if (step === 1) dots = "."
+            else if (step === 2) dots = ".."
+            else if (step === 3) dots = "..."
+            messageModel.setProperty(lastIndex, "text", i18n.tr("Thinking") + dots)
+        }
+
+        onRunningChanged: {
+            if (running) {
+                step = 0
+                if (messageModel.count > 0) {
+                    messageModel.setProperty(messageModel.count - 1, "text", i18n.tr("Thinking"))
+                }
+            }
+        }
     }
 
     Rectangle {
@@ -442,10 +483,16 @@ Page {
                     Layout.preferredWidth: units.gu(10)
                     Layout.preferredHeight: units.gu(5)
                     Layout.alignment: Qt.AlignVCenter
-                    text: chatPage.isResponding ? i18n.tr("...") : i18n.tr("Send")
-                    color: (chatPage.isResponding || !composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : "#E95420"
-                    enabled: !chatPage.isResponding && composer.text && composer.text.trim().length > 0
-                    onClicked: chatPage.sendMessage()
+                    text: chatPage.isResponding ? i18n.tr("Stop") : i18n.tr("Send")
+                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : "#E95420")
+                    enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
+                    onClicked: {
+                        if (chatPage.isResponding) {
+                            chatPage.stopInference()
+                        } else {
+                            chatPage.sendMessage()
+                        }
+                    }
                 }
             }
         }
