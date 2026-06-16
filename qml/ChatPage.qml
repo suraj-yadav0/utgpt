@@ -16,7 +16,7 @@ Page {
 
     header: PageHeader {
         id: chatHeader
-        title: i18n.tr("Chat")
+        title: i18n.tr("C H A T")
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {

@@ -212,7 +212,7 @@ MainView {
                     }
 
                     Label {
-                        text: "UTGPT"
+                        text: "U T G P T"
                         color: "white"
                         font.bold: true
                         fontSize: "large"
