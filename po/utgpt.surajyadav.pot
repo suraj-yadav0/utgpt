@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-16 18:29+0000\n"
+"POT-Creation-Date: 2026-06-16 18:47+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,11 +17,12 @@ msgstr ""
 "Content-Type: text/plain; charset=CHARSET\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: ../qml/ChatPage.qml:19 ../qml/Main.qml:260
-msgid "Chat"
+#: ../qml/ChatPage.qml:19
+msgid "C H A T"
 msgstr ""
 
-#: ../qml/ChatPage.qml:24 ../qml/DownloadPage.qml:23 ../qml/SettingsPage.qml:24
+#: ../qml/ChatPage.qml:24 ../qml/DownloadPage.qml:23 ../qml/Main.qml:209
+#: ../qml/SettingsPage.qml:24
 msgid "Menu"
 msgstr ""
 
@@ -131,15 +132,19 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
-#: ../qml/Main.qml:312
+#: ../qml/Main.qml:253
+msgid "Chat"
+msgstr ""
+
+#: ../qml/Main.qml:326
 msgid "Models"
 msgstr ""
 
-#: ../qml/Main.qml:364 ../qml/SettingsPage.qml:19
+#: ../qml/Main.qml:399 ../qml/SettingsPage.qml:19
 msgid "Settings"
 msgstr ""
 
-#: ../qml/Main.qml:426
+#: ../qml/Main.qml:491
 msgid "Loading Python backend..."
 msgstr ""
 

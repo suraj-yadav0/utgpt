@@ -181,7 +181,7 @@ MainView {
         z: 100
         height: parent.height
         width: units.gu(26)
-        color: "#1E1E24" // Sleek dark charcoal/slate gray
+        color: "#FFFFFF" // Clean white background
 
         x: (root.width < units.gu(60)) ? (root.sidebarOpen ? 0 : -width) : 0
         Behavior on x {
@@ -197,22 +197,16 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: units.gu(8)
-                color: "transparent"
+                color: "#E95420" // Primary orange
 
                 RowLayout {
-                    anchors.centerIn: parent
+                    anchors.fill: parent
+                    anchors.leftMargin: units.gu(2)
+                    anchors.rightMargin: units.gu(2)
                     spacing: units.gu(1.5)
 
-                    Image {
-                        source: Qt.resolvedUrl("../assets/logo.png")
-                        Layout.preferredWidth: units.gu(4)
-                        Layout.preferredHeight: units.gu(4)
-                        fillMode: Image.PreserveAspectFit
-                        Layout.alignment: Qt.AlignVCenter
-                    }
-
                     Label {
-                        text: "U T G P T"
+                        text: i18n.tr("Menu")
                         color: "white"
                         font.bold: true
                         fontSize: "large"
@@ -225,55 +219,76 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: "#2D2D35"
+                color: "#E2E8F0"
             }
 
             // Navigation Tabs
             Column {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.topMargin: units.gu(2)
-                spacing: units.gu(0.8)
+                Layout.topMargin: 0
+                spacing: 0
 
                 // Chat Tab
                 Rectangle {
-                    width: parent.width - units.gu(2)
-                    height: units.gu(5.5)
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    color: root.currentTabIndex === 0 ? "#2D2D35" : "transparent"
-                    radius: units.gu(0.8)
+                    width: parent.width
+                    height: units.gu(6.5)
+                    color: root.currentTabIndex === 0 ? "#FFF5F0" : "#FFFFFF"
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: units.gu(1.5)
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
                         spacing: units.gu(1.5)
 
                         Icon {
                             name: "message"
-                            width: units.gu(2.2)
-                            height: units.gu(2.2)
-                            color: root.currentTabIndex === 0 ? "#E95420" : "#8A8A8F"
+                            width: units.gu(2.4)
+                            height: units.gu(2.4)
+                            color: root.currentTabIndex === 0 ? "#E95420" : "#64748B"
                             Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Chat")
-                            color: root.currentTabIndex === 0 ? "white" : "#BDC3C7"
+                            color: root.currentTabIndex === 0 ? "#E95420" : "#475569"
                             font.bold: root.currentTabIndex === 0
                             fontSize: "medium"
                             Layout.alignment: Qt.AlignVCenter
                         }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Icon {
+                            name: "go-next-symbolic"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: root.currentTabIndex === 0 ? "#E95420" : "#CBD5E1"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
 
-                    // Orange indicator pill on the left
+                    // Orange indicator pill on the left spanning full height
                     Rectangle {
                         anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                         width: units.gu(0.4)
-                        height: units.gu(3)
                         color: "#E95420"
                         visible: root.currentTabIndex === 0
-                        radius: width / 2
+                    }
+
+                    // Bottom separator line
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        height: 1
+                        color: "#E2E8F0"
                     }
 
                     MouseArea {
@@ -289,43 +304,64 @@ MainView {
 
                 // Models Tab
                 Rectangle {
-                    width: parent.width - units.gu(2)
-                    height: units.gu(5.5)
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    color: root.currentTabIndex === 1 ? "#2D2D35" : "transparent"
-                    radius: units.gu(0.8)
+                    width: parent.width
+                    height: units.gu(6.5)
+                    color: root.currentTabIndex === 1 ? "#FFF5F0" : "#FFFFFF"
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: units.gu(1.5)
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
                         spacing: units.gu(1.5)
 
                         Icon {
                             name: "package-x-generic-symbolic"
-                            width: units.gu(2.2)
-                            height: units.gu(2.2)
-                            color: root.currentTabIndex === 1 ? "#E95420" : "#8A8A8F"
+                            width: units.gu(2.4)
+                            height: units.gu(2.4)
+                            color: root.currentTabIndex === 1 ? "#E95420" : "#64748B"
                             Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Models")
-                            color: root.currentTabIndex === 1 ? "white" : "#BDC3C7"
+                            color: root.currentTabIndex === 1 ? "#E95420" : "#475569"
                             font.bold: root.currentTabIndex === 1
                             fontSize: "medium"
                             Layout.alignment: Qt.AlignVCenter
                         }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Icon {
+                            name: "go-next-symbolic"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: root.currentTabIndex === 1 ? "#E95420" : "#CBD5E1"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
 
-                    // Orange indicator pill on the left
+                    // Orange indicator pill on the left spanning full height
                     Rectangle {
                         anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                         width: units.gu(0.4)
-                        height: units.gu(3)
                         color: "#E95420"
                         visible: root.currentTabIndex === 1
-                        radius: width / 2
+                    }
+
+                    // Bottom separator line
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        height: 1
+                        color: "#E2E8F0"
                     }
 
                     MouseArea {
@@ -341,43 +377,64 @@ MainView {
 
                 // Settings Tab
                 Rectangle {
-                    width: parent.width - units.gu(2)
-                    height: units.gu(5.5)
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    color: root.currentTabIndex === 2 ? "#2D2D35" : "transparent"
-                    radius: units.gu(0.8)
+                    width: parent.width
+                    height: units.gu(6.5)
+                    color: root.currentTabIndex === 2 ? "#FFF5F0" : "#FFFFFF"
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: units.gu(1.5)
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
                         spacing: units.gu(1.5)
 
                         Icon {
                             name: "settings"
-                            width: units.gu(2.2)
-                            height: units.gu(2.2)
-                            color: root.currentTabIndex === 2 ? "#E95420" : "#8A8A8F"
+                            width: units.gu(2.4)
+                            height: units.gu(2.4)
+                            color: root.currentTabIndex === 2 ? "#E95420" : "#64748B"
                             Layout.alignment: Qt.AlignVCenter
                         }
 
                         Label {
                             text: i18n.tr("Settings")
-                            color: root.currentTabIndex === 2 ? "white" : "#BDC3C7"
+                            color: root.currentTabIndex === 2 ? "#E95420" : "#475569"
                             font.bold: root.currentTabIndex === 2
                             fontSize: "medium"
                             Layout.alignment: Qt.AlignVCenter
                         }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Icon {
+                            name: "go-next-symbolic"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: root.currentTabIndex === 2 ? "#E95420" : "#CBD5E1"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
 
-                    // Orange indicator pill on the left
+                    // Orange indicator pill on the left spanning full height
                     Rectangle {
                         anchors.left: parent.left
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
                         width: units.gu(0.4)
-                        height: units.gu(3)
                         color: "#E95420"
                         visible: root.currentTabIndex === 2
-                        radius: width / 2
+                    }
+
+                    // Bottom separator line
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        height: 1
+                        color: "#E2E8F0"
                     }
 
                     MouseArea {
@@ -396,12 +453,20 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: units.gu(6)
-                color: "transparent"
+                color: "#F8F9FA"
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: "#E2E8F0"
+                }
 
                 Label {
                     anchors.centerIn: parent
                     text: "v0.1.0"
-                    color: "#5C5C64"
+                    color: "#94A3B8"
                     fontSize: "x-small"
                 }
             }
