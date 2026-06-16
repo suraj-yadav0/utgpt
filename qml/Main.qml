@@ -203,11 +203,11 @@ MainView {
                     anchors.centerIn: parent
                     spacing: units.gu(1.5)
 
-                    Icon {
-                        source: Qt.resolvedUrl("../assets/logo.svg")
-                        width: units.gu(4)
-                        height: units.gu(4)
-                        color: "#E95420"
+                    Image {
+                        source: Qt.resolvedUrl("../assets/logo.png")
+                        Layout.preferredWidth: units.gu(4)
+                        Layout.preferredHeight: units.gu(4)
+                        fillMode: Image.PreserveAspectFit
                         Layout.alignment: Qt.AlignVCenter
                     }
 
