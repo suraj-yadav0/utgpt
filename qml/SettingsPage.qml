@@ -240,43 +240,6 @@ Page {
                 }
             }
 
-            // Card 4: About & Credits
-            Rectangle {
-                width: parent.width
-                height: creditsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
-                border.width: 1
-                radius: units.gu(1.5)
-
-                Column {
-                    id: creditsColumn
-                    anchors.fill: parent
-                    anchors.margins: units.gu(1.5)
-                    spacing: units.gu(1.2)
-
-                    Label {
-                        text: i18n.tr("About")
-                        font.bold: true
-                        color: "#1E293B"
-                    }
-
-                    Label {
-                        text: i18n.tr("App icon designed by Rikas Dzihab from Flaticon.")
-                        color: "#475569"
-                        fontSize: "small"
-                        wrapMode: Text.Wrap
-                        width: parent.width
-                    }
-
-                    Button {
-                        width: parent.width
-                        text: i18n.tr("View Designer Profile")
-                        color: "#E95420"
-                        onClicked: Qt.openUrlExternally("https://www.flaticon.com/authors/rikas-dzihab")
-                    }
-                }
-            }
 
             Button {
                 width: parent.width

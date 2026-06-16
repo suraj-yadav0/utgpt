@@ -40,10 +40,6 @@ The application is structured into three primary layers:
    - The thread reads characters from the subprocess stdout pipe in real time, emitting tokens back to the QML model.
    - If the user taps "Stop", a concurrent request is processed, terminating the registered subprocess immediately and preserving the response generated up to that point.
 
-## Credits
-
-- App icon designed by [Rikas Dzihab](https://www.flaticon.com/authors/rikas-dzihab) from Flaticon.
-
 ## License
 
 Copyright (C) 2026 Suraj Yadav
