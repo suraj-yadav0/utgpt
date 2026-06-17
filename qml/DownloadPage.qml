@@ -133,91 +133,6 @@ Page {
 
     ListModel {
         id: modelsList
-
-        ListElement {
-            name: "SmolLM2-1.7B"
-            filename: "smollm2-1.7b-instruct-q4_k_m.gguf"
-            size: "~1 GB"
-            description: "Fast general chat"
-            url: "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "Qwen2.5-1.5B"
-            filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-            size: "~1 GB"
-            description: "Great multilingual"
-            url: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "Llama-3.2-1B"
-            filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-            size: "~800 MB"
-            description: "Ultra-fast Meta assistant"
-            url: "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "Llama-3.2-3B"
-            filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-            size: "~2.0 GB"
-            description: "Meta's smart assistant"
-            url: "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "Gemma-2-2B"
-            filename: "gemma-2-2b-it-Q4_K_M.gguf"
-            size: "~1.7 GB"
-            description: "Google's lightweight assistant"
-            url: "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "Phi-3-mini-4K"
-            filename: "Phi-3-mini-4k-instruct-Q4_K_M.gguf"
-            size: "~2.2 GB"
-            description: "Microsoft reasoning model"
-            url: "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
-        ListElement {
-            name: "TinyLlama-1.1B"
-            filename: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-            size: "~700 MB"
-            description: "Fastest, basic"
-            url: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-            progress: 0.0
-            downloading: false
-            paused: false
-            ready: false
-            requestId: ""
-        }
     }
 
     Connections {
@@ -262,8 +177,65 @@ Page {
         }
     }
 
-    onBackendReadyChanged: if (backendReady) refreshDownloadedModels()
-    onVisibleChanged: if (visible && backendReady) refreshDownloadedModels()
+    function populateModelsFromCatalog() {
+        if (!root.modelCatalog || root.modelCatalog.length === 0) return;
+        modelsList.clear();
+        
+        var filterText = "";
+        try {
+            if (typeof searchInput !== "undefined" && searchInput) {
+                filterText = searchInput.text.toLowerCase().trim();
+            }
+        } catch(e) {}
+
+        for (var i = 0; i < root.modelCatalog.length; i++) {
+            var item = root.modelCatalog[i];
+            
+            if (filterText.length > 0) {
+                var nameMatch = (item.name && item.name.toLowerCase().indexOf(filterText) >= 0);
+                var descMatch = (item.description && item.description.toLowerCase().indexOf(filterText) >= 0);
+                var devMatch = (item.developer && item.developer.toLowerCase().indexOf(filterText) >= 0);
+                var usageMatch = (item.usage && item.usage.toLowerCase().indexOf(filterText) >= 0);
+                
+                if (!nameMatch && !descMatch && !devMatch && !usageMatch) {
+                    continue;
+                }
+            }
+
+            modelsList.append({
+                name: item.name,
+                filename: item.filename,
+                size: item.size,
+                description: item.description,
+                url: item.url,
+                progress: 0.0,
+                downloading: false,
+                paused: false,
+                ready: false,
+                requestId: ""
+            });
+        }
+        refreshDownloadedModels();
+    }
+
+    onBackendReadyChanged: {
+        if (backendReady) {
+            populateModelsFromCatalog()
+        }
+    }
+    
+    onVisibleChanged: {
+        if (visible && backendReady) {
+            populateModelsFromCatalog()
+        }
+    }
+
+    Connections {
+        target: root
+        function onModelCatalogChanged() {
+            populateModelsFromCatalog()
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -290,6 +262,41 @@ Page {
                 margins: units.gu(2)
             }
             spacing: units.gu(2)
+
+            // Search Bar Card
+            Rectangle {
+                width: parent.width
+                height: units.gu(6.5)
+                color: "#FFFFFF"
+                border.color: "#E2E8F0"
+                border.width: 1
+                radius: units.gu(1.5)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: units.gu(1.5)
+                    anchors.rightMargin: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Icon {
+                        name: "search"
+                        width: units.gu(2.2)
+                        height: units.gu(2.2)
+                        color: "#94A3B8"
+                    }
+
+                    TextField {
+                        id: searchInput
+                        Layout.fillWidth: true
+                        placeholderText: i18n.tr("Search models...")
+                        hasClearButton: true
+                        
+                        onTextChanged: {
+                            downloadPage.populateModelsFromCatalog()
+                        }
+                    }
+                }
+            }
 
             Repeater {
                 model: modelsList

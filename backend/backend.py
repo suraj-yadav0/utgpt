@@ -48,11 +48,144 @@ DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
 ACTIVE_PROCESSES = set()
 
-HARDCODED_MODELS = {
-    "SmolLM2-1.7B": "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
-    "Qwen2.5-1.5B": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-    "TinyLlama-1.1B": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
-}
+DEFAULT_CATALOG = [
+    {
+        "name": "SmolLM2-1.7B",
+        "filename": "smollm2-1.7b-instruct-q4_k_m.gguf",
+        "size": "~1.0 GB",
+        "description": "Fast general chat",
+        "url": "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
+        "developer": "Hugging Face",
+        "context": "8,192 tokens",
+        "maxContext": 8192,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Fast general chat, low resource devices"
+    },
+    {
+        "name": "Qwen2.5-1.5B",
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "size": "~1.0 GB",
+        "description": "Great multilingual",
+        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "developer": "Alibaba Group",
+        "context": "32,768 tokens",
+        "maxContext": 32768,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Excellent multilingual capabilities, coding & reasoning"
+    },
+    {
+        "name": "DeepSeek-R1-Distill-Qwen-1.5B",
+        "filename": "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        "size": "~1.1 GB",
+        "description": "Reasoning assistant (thinking step)",
+        "url": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+        "developer": "DeepSeek",
+        "context": "32,768 tokens",
+        "maxContext": 32768,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Distilled reasoning model, thinking step visualization, math/logic"
+    },
+    {
+        "name": "Llama-3.2-1B",
+        "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "size": "~800 MB",
+        "description": "Ultra-fast Meta assistant",
+        "url": "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        "developer": "Meta",
+        "context": "128,000 tokens",
+        "maxContext": 128000,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Ultra-fast assistant, agentic tasks, long contexts"
+    },
+    {
+        "name": "Llama-3.2-3B",
+        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "size": "~2.0 GB",
+        "description": "Meta's smart assistant",
+        "url": "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "developer": "Meta",
+        "context": "128,000 tokens",
+        "maxContext": 128000,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Smart general assistant, high quality logic & reasoning"
+    },
+    {
+        "name": "Gemma-2-2B",
+        "filename": "gemma-2-2b-it-Q4_K_M.gguf",
+        "size": "~1.7 GB",
+        "description": "Google's lightweight assistant",
+        "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+        "developer": "Google",
+        "context": "8,192 tokens",
+        "maxContext": 8192,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Lightweight high-quality chatting, instruction following"
+    },
+    {
+        "name": "Phi-3-mini-4K",
+        "filename": "Phi-3-mini-4k-instruct-Q4_K_M.gguf",
+        "size": "~2.2 GB",
+        "description": "Microsoft reasoning model",
+        "url": "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf",
+        "developer": "Microsoft",
+        "context": "4,096 tokens",
+        "maxContext": 4096,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Reasoning, logical tasks, math and coding"
+    },
+    {
+        "name": "Granite-3.0-2B-Instruct",
+        "filename": "granite-3.0-2b-instruct-Q4_K_M.gguf",
+        "size": "~1.3 GB",
+        "description": "IBM's lightweight instruction model",
+        "url": "https://huggingface.co/bartowski/granite-3.0-2b-instruct-GGUF/resolve/main/granite-3.0-2b-instruct-Q4_K_M.gguf",
+        "developer": "IBM",
+        "context": "4,096 tokens",
+        "maxContext": 4096,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Enterprise tasks, translation, coding"
+    },
+    {
+        "name": "Qwen2.5-0.5B",
+        "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        "size": "~390 MB",
+        "description": "Ultra-lightweight multilingual assistant",
+        "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        "developer": "Alibaba Group",
+        "context": "32,768 tokens",
+        "maxContext": 32768,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage"
+    },
+    {
+        "name": "TinyLlama-1.1B",
+        "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        "size": "~700 MB",
+        "description": "Fastest, basic",
+        "url": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+        "developer": "TinyLlama Project",
+        "context": "2,048 tokens",
+        "maxContext": 2048,
+        "quant": "Q4_K_M (4-bit)",
+        "usage": "Extremely fast, simple chats on low-spec hardware"
+    }
+]
+
+import json
+
+def fetch_model_catalog():
+    url = "https://raw.githubusercontent.com/surajyadav0/utgpt/main/assets/models.json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+        with _urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if isinstance(data, list) and len(data) > 0:
+                required_keys = {"name", "filename", "url"}
+                if all(required_keys.issubset(item.keys()) for item in data):
+                    return data
+    except Exception as e:
+        print("UTGPT_LOG: Failed to fetch remote model catalog, using fallback: " + str(e), file=sys.stderr, flush=True)
+    return DEFAULT_CATALOG
 
 
 def _ensure_models_dir():
@@ -572,7 +705,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
 
 
 def get_hardcoded_models():
-    return HARDCODED_MODELS
+    return {item["name"]: item["url"] for item in DEFAULT_CATALOG}
 
 
 def stop_all_inference():

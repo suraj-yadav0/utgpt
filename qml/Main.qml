@@ -29,6 +29,7 @@ MainView {
     property real temperature: 0.7
     property int maxTokens: 512
     property bool sidebarOpen: false
+    property var modelCatalog: []
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -37,7 +38,17 @@ MainView {
     onBackendReadyChanged: {
         if (backendReady) {
             refreshModels()
+            loadCatalog()
         }
+    }
+
+    function loadCatalog() {
+        if (!backendReady) return;
+        python.call("backend.fetch_model_catalog", [], function(result) {
+            if (result && result.length > 0) {
+                root.modelCatalog = result
+            }
+        })
     }
 
     onCurrentTabIndexChanged: {

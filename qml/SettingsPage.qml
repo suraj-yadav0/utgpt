@@ -76,6 +76,18 @@ Page {
     function getModelInfo(filename) {
         if (!filename) return null;
         var fn = filename.toLowerCase();
+        
+        // Search in root.modelCatalog first
+        if (root.modelCatalog) {
+            for (var i = 0; i < root.modelCatalog.length; i++) {
+                var item = root.modelCatalog[i];
+                if (item.filename && item.filename.toLowerCase() === fn) {
+                    return item;
+                }
+            }
+        }
+        
+        // Fallback for custom or legacy filenames
         if (fn.indexOf("smollm2") >= 0) {
             return {
                 name: "SmolLM2-1.7B",
