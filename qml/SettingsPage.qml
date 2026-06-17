@@ -31,6 +31,15 @@ Page {
     property var python
     property bool backendReady: false
     property string selectedModel: ""
+    
+    onSelectedModelChanged: {
+        var info = getModelInfo(selectedModel)
+        var limit = info ? info.maxContext : 2048
+        if (maxTokens > limit) {
+            maxTokens = limit
+        }
+    }
+
     property real temperature: 0.7
     property int maxTokens: 512
     property string freeStorage: i18n.tr("Checking storage...")
@@ -73,6 +82,7 @@ Page {
                 developer: "Hugging Face",
                 size: "~1.0 GB",
                 context: "8,192 tokens",
+                maxContext: 8192,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Fast general chat, low resource devices"
             };
@@ -82,6 +92,7 @@ Page {
                 developer: "Alibaba Group",
                 size: "~1.0 GB",
                 context: "32,768 tokens",
+                maxContext: 32768,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Excellent multilingual capabilities, coding & reasoning"
             };
@@ -91,6 +102,7 @@ Page {
                 developer: "Meta",
                 size: "~800 MB",
                 context: "128,000 tokens",
+                maxContext: 128000,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Ultra-fast assistant, agentic tasks, long contexts"
             };
@@ -100,6 +112,7 @@ Page {
                 developer: "Meta",
                 size: "~2.0 GB",
                 context: "128,000 tokens",
+                maxContext: 128000,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Smart general assistant, high quality logic & reasoning"
             };
@@ -109,6 +122,7 @@ Page {
                 developer: "Google",
                 size: "~1.7 GB",
                 context: "8,192 tokens",
+                maxContext: 8192,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Lightweight high-quality chatting, instruction following"
             };
@@ -118,6 +132,7 @@ Page {
                 developer: "Microsoft",
                 size: "~2.2 GB",
                 context: "4,096 tokens",
+                maxContext: 4096,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Reasoning, logical tasks, math and coding"
             };
@@ -127,6 +142,7 @@ Page {
                 developer: "TinyLlama Project",
                 size: "~700 MB",
                 context: "2,048 tokens",
+                maxContext: 2048,
                 quant: "Q4_K_M (4-bit)",
                 usage: "Extremely fast, simple chats on low-spec hardware"
             };
@@ -136,6 +152,7 @@ Page {
             developer: "Unknown",
             size: "Unknown",
             context: "Unknown",
+            maxContext: 2048,
             quant: "GGUF",
             usage: "General inference"
         };
@@ -388,7 +405,10 @@ Page {
                         id: maxTokensSlider
                         width: parent.width
                         minimumValue: 50
-                        maximumValue: 100000
+                        maximumValue: {
+                            var info = settingsPage.getModelInfo(settingsPage.selectedModel)
+                            return info ? info.maxContext : 2048
+                        }
                         value: settingsPage.maxTokens
                         live: true
 
