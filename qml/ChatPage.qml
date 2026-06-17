@@ -16,7 +16,7 @@ Page {
 
     header: PageHeader {
         id: chatHeader
-        title: i18n.tr("C H A T")
+        title: i18n.tr("L O C A L M I N D")
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
@@ -32,7 +32,7 @@ Page {
     property bool backendReady: false
     property string model: ""
     property real temperature: 0.7
-    property int maxTokens: 200
+    property int maxTokens: 512
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false

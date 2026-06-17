@@ -27,7 +27,7 @@ MainView {
     property string selectedModel: ""
     property var availableModels: []
     property real temperature: 0.7
-    property int maxTokens: 200
+    property int maxTokens: 512
     property bool sidebarOpen: false
 
     onWidthChanged: {
