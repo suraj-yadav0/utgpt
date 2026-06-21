@@ -191,7 +191,7 @@ MainView {
         id: sidebar
         z: 100
         height: parent.height
-        width: units.gu(26)
+        width: units.gu(30)
         color: "#FFFFFF" // Clean white background
 
         x: (root.width < units.gu(60)) ? (root.sidebarOpen ? 0 : -width) : 0
