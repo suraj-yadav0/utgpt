@@ -37,6 +37,24 @@ Page {
     property string pendingRequestId: ""
     property bool userStopped: false
 
+    onBackendReadyChanged: {
+        if (backendReady) {
+            loadHistory()
+        }
+    }
+
+    function loadHistory() {
+        python.call("backend.load_chat_history", [], function(result) {
+            messageModel.clear()
+            if (result && result.length > 0) {
+                for (var i = 0; i < result.length; i++) {
+                    messageModel.append({ "role": result[i].role, "text": result[i].text })
+                }
+            }
+            scrollToBottom()
+        })
+    }
+
     function stopInference() {
         if (!isResponding) return;
         userStopped = true
@@ -48,6 +66,7 @@ Page {
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
+        python.call("backend.clear_chat_history", [])
     }
 
     function scrollToBottom() {
@@ -86,6 +105,16 @@ Page {
                 messageModel.setProperty(lastIndex, "text", currentText + "\n" + fallback)
             }
         }
+
+        // Save generated assistant response to database
+        if (messageModel.count > 0) {
+            var lastIndex = messageModel.count - 1
+            var lastItem = messageModel.get(lastIndex)
+            if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
+                python.call("backend.add_chat_message", ["assistant", lastItem.text])
+            }
+        }
+
         userStopped = false
     }
 
@@ -102,6 +131,20 @@ Page {
             return
         }
 
+        // Build history array of previous messages to pass as context
+        var history = []
+        for (var i = 0; i < messageModel.count; i++) {
+            var item = messageModel.get(i)
+            // Filter out system warnings or thinking states
+            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking" ) && item.text !== "...")) {
+                history.push({ "role": item.role, "content": item.text })
+            }
+        }
+        history.push({ "role": "user", "content": trimmed })
+
+        // Save user message to database
+        python.call("backend.add_chat_message", ["user", trimmed])
+
         messageModel.append({ "role": "user", "text": trimmed })
         messageModel.append({ "role": "assistant", "text": "Thinking" })
         composer.text = ""
@@ -111,7 +154,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, trimmed, temperature, maxTokens, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1

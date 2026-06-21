@@ -15,6 +15,7 @@ import tarfile
 import io
 import time
 import sys
+import sqlite3
 
 def _urlopen(req, timeout=60):
     try:
@@ -592,9 +593,120 @@ def clear_partial_download(filename):
     return False
 
 
+DB_PATH = os.path.expanduser("~/.local/share/utgpt.surajyadav/chat_history.db")
+
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            text TEXT NOT NULL,
+            timestamp REAL NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def load_chat_history():
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, text FROM messages ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"role": r, "text": t} for r, t in rows]
+
+def add_chat_message(role, text):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO messages (role, text, timestamp) VALUES (?, ?, ?)", (role, text, time.time()))
+    conn.commit()
+    conn.close()
+    return True
+
+def clear_chat_history():
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM messages")
+    conn.commit()
+    conn.close()
+    return True
+
+def get_prompt_and_boundary(model_filename, messages):
+    """
+    Formats the conversation history according to the model's prompt template
+    and returns the final prompt and the specific assistant tag boundary.
+    """
+    model_lower = model_filename.lower()
+    
+    if not isinstance(messages, list):
+        prompt = "User: {0}\nAssistant:".format(messages)
+        return prompt, "Assistant:"
+        
+    # 1. Llama-3 / Llama-3.2 / Granite
+    if "llama-3" in model_lower or "granite" in model_lower:
+        prompt = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>"
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        return prompt, "<|start_header_id|>assistant<|end_header_id|>\n\n"
+
+    # 2. Qwen2.5 / DeepSeek-R1-Distill-Qwen / SmolLM2 / TinyLlama
+    elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower or "tinyllama" in model_lower:
+        prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        prompt += "<|im_start|>assistant\n"
+        return prompt, "<|im_start|>assistant\n"
+
+    # 3. Gemma-2
+    elif "gemma" in model_lower:
+        prompt = "<bos>"
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
+        prompt += "<start_of_turn>assistant\n"
+        return prompt, "<start_of_turn>assistant\n"
+
+    # 4. Phi-3
+    elif "phi-3" in model_lower:
+        prompt = "<s>"
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<|{role}|>\n{content}<|end|>\n"
+        prompt += "<|assistant|>\n"
+        return prompt, "<|assistant|>\n"
+
+    # 5. Default Fallback
+    else:
+        prompt = ""
+        for msg in messages:
+            role = msg.get("role", "user").capitalize()
+            content = msg.get("content", "")
+            prompt += f"{role}: {content}\n"
+        prompt += "Assistant:"
+        return prompt, "Assistant:"
+
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
     print("UTGPT_LOG: Entering run_inference with model={0}, prompt={1}".format(model_filename, user_message), file=sys.stderr, flush=True)
-    prompt = "User: {0}\nAssistant:".format(user_message)
+    if isinstance(user_message, list):
+        MAX_HISTORY = 20
+        history_window = user_message[-MAX_HISTORY:]
+        prompt, boundary = get_prompt_and_boundary(model_filename, history_window)
+    else:
+        prompt = "User: {0}\nAssistant:".format(user_message)
+        boundary = "Assistant:"
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
@@ -653,8 +765,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
                 output_buffer += char
                 
                 if not started:
-                    if "Assistant:" in output_buffer:
-                        print("UTGPT_LOG: Detected 'Assistant:' boundary, starting token stream", file=sys.stderr, flush=True)
+                    if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
+                        print("UTGPT_LOG: Detected boundary, starting token stream", file=sys.stderr, flush=True)
                         output_buffer = ""
                         started = True
                     continue
@@ -718,6 +830,7 @@ def stop_all_inference():
 
 def initialize():
     _ensure_models_dir()
+    init_db()
     global LLAMA_CLI_READY
     
     if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
