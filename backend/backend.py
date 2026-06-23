@@ -39,11 +39,18 @@ APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 MODELS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/models")
 LLAMA_CLI_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-cli")
 LLAMA_CLI_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-cli")
+LLAMA_COMPLETION_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-completion")
+LLAMA_COMPLETION_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-completion")
 
 def get_llama_cli_path():
     if os.path.exists(LLAMA_CLI_PATH_BUNDLED):
         return LLAMA_CLI_PATH_BUNDLED
     return LLAMA_CLI_PATH_WRITABLE
+
+def get_llama_completion_path():
+    if os.path.exists(LLAMA_COMPLETION_PATH_BUNDLED):
+        return LLAMA_COMPLETION_PATH_BUNDLED
+    return LLAMA_COMPLETION_PATH_WRITABLE
 
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
@@ -503,7 +510,9 @@ LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
 
 def ensure_llama_cli():
-    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
+    cli_exists = os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE)
+    completion_exists = os.path.exists(LLAMA_COMPLETION_PATH_BUNDLED) or os.path.exists(LLAMA_COMPLETION_PATH_WRITABLE)
+    if cli_exists and completion_exists:
         return True
     
     system = platform.system().lower()
@@ -539,20 +548,20 @@ def ensure_llama_cli():
             tar_data = response.read()
             
         with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
-            member_to_extract = None
+            os.makedirs(MODELS_DIR, exist_ok=True)
+            extracted_any = False
             for member in tar.getmembers():
-                if member.name.endswith("llama-cli"):
-                    member_to_extract = member
-                    break
-                    
-            if member_to_extract:
-                os.makedirs(MODELS_DIR, exist_ok=True)
-                f = tar.extractfile(member_to_extract)
-                if f:
-                    with open(LLAMA_CLI_PATH_WRITABLE, "wb") as dest_file:
-                        dest_file.write(f.read())
-                    os.chmod(LLAMA_CLI_PATH_WRITABLE, 0o755)
-                    return True
+                if member.isfile():
+                    basename = os.path.basename(member.name)
+                    dest_path = os.path.join(MODELS_DIR, basename)
+                    f = tar.extractfile(member)
+                    if f:
+                        with open(dest_path, "wb") as dest_file:
+                            dest_file.write(f.read())
+                        if basename in ["llama-cli", "llama-completion"] or basename.endswith(".so") or ".so." in basename:
+                            os.chmod(dest_path, 0o755)
+                        extracted_any = True
+            return extracted_any
     except Exception as e:
         global LLAMA_CLI_ERROR
         LLAMA_CLI_ERROR = str(e)
@@ -607,6 +616,8 @@ def init_db():
             timestamp REAL NOT NULL
         )
     """)
+    # Prune corrupt entries from previous session implementations
+    cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
     conn.commit()
     conn.close()
 
@@ -637,76 +648,153 @@ def clear_chat_history():
     conn.close()
     return True
 
-def get_prompt_and_boundary(model_filename, messages):
+def retrieve_relevant_context(query, exclude_texts, limit=3):
+    init_db()
+    stopwords = {
+        "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "and", "or", 
+        "who", "what", "how", "why", "where", "you", "me", "my", "i", "do", "does", 
+        "did", "have", "has", "had", "for", "with", "this", "that", "it", "he", "she", 
+        "they", "we", "about", "your", "mine", "am", "go", "get", "can", "could", "would",
+        "here", "there", "when", "then", "which", "whoever", "whose", "whom"
+    }
+    
+    # Extract keywords
+    words = [w.strip("?,.:;!\"'()[]{}<>-_+=|\\/`~@#$%^&*").lower() for w in query.split()]
+    keywords = [w for w in words if w and w not in stopwords and len(w) > 2]
+    
+    if not keywords:
+        return []
+        
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    matches = {}
+    for kw in keywords:
+        cursor.execute("SELECT id, role, text, timestamp FROM messages WHERE text LIKE ?", (f"%{kw}%",))
+        for row in cursor.fetchall():
+            msg_id, role, text, timestamp = row
+            if text in exclude_texts:
+                continue
+            if msg_id not in matches:
+                matches[msg_id] = {
+                    "id": msg_id,
+                    "role": role,
+                    "text": text,
+                    "timestamp": timestamp,
+                    "score": 0
+                }
+            matches[msg_id]["score"] += 1
+            
+    conn.close()
+    
+    if not matches:
+        return []
+        
+    sorted_matches = sorted(matches.values(), key=lambda x: (x["score"], x["timestamp"]), reverse=True)
+    relevant_msgs = sorted_matches[:limit]
+    relevant_msgs = sorted(relevant_msgs, key=lambda x: x["timestamp"])
+    
+    return [{"role": m["role"], "text": m["text"]} for m in relevant_msgs]
+
+def get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs):
     """
-    Formats the conversation history according to the model's prompt template
-    and returns the final prompt and the specific assistant tag boundary.
+    Formats the conversation prompt using model-specific templates,
+    integrating retrieved relevant history context (RAG) in the system prompt.
     """
     model_lower = model_filename.lower()
     
-    if not isinstance(messages, list):
-        prompt = "User: {0}\nAssistant:".format(messages)
-        return prompt, "Assistant:"
-        
+    context_str = ""
+    if context_msgs:
+        context_str = "Relevant context from previous conversations:\n"
+        for msg in context_msgs:
+            role_name = "User" if msg["role"] == "user" else "Assistant"
+            context_str += f"- {role_name}: {msg['text']}\n"
+
     # 1. Llama-3 / Llama-3.2 / Granite
     if "llama-3" in model_lower or "granite" in model_lower:
-        prompt = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>"
-        for msg in messages:
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n\n{context_str}"
+        prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
+        for msg in recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
+        prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{current_query}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
         return prompt, "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
     # 2. Qwen2.5 / DeepSeek-R1-Distill-Qwen / SmolLM2 / TinyLlama
     elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower or "tinyllama" in model_lower:
-        prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-        for msg in messages:
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n\n{context_str}"
+        prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n"
+        for msg in recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+        prompt += f"<|im_start|>user\n{current_query}<|im_end|>\n"
         prompt += "<|im_start|>assistant\n"
         return prompt, "<|im_start|>assistant\n"
 
     # 3. Gemma-2
     elif "gemma" in model_lower:
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n{context_str}"
         prompt = "<bos>"
-        for msg in messages:
+        prompt += f"<start_of_turn>system\n{system_content}<end_of_turn>\n"
+        for msg in recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
+        prompt += f"<start_of_turn>user\n{current_query}<end_of_turn>\n"
         prompt += "<start_of_turn>assistant\n"
         return prompt, "<start_of_turn>assistant\n"
 
     # 4. Phi-3
     elif "phi-3" in model_lower:
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n{context_str}"
         prompt = "<s>"
-        for msg in messages:
+        prompt += f"<|system|>\n{system_content}<|end|>\n"
+        for msg in recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|{role}|>\n{content}<|end|>\n"
+        prompt += f"<|user|>\n{current_query}<|end|>\n"
         prompt += "<|assistant|>\n"
         return prompt, "<|assistant|>\n"
 
     # 5. Default Fallback
     else:
         prompt = ""
-        for msg in messages:
+        if context_str:
+            prompt += f"System: {context_str}\n"
+        for msg in recent_history:
             role = msg.get("role", "user").capitalize()
             content = msg.get("content", "")
             prompt += f"{role}: {content}\n"
-        prompt += "Assistant:"
+        prompt += f"User: {current_query}\nAssistant:"
         return prompt, "Assistant:"
 
 def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
-    print("UTGPT_LOG: Entering run_inference with model={0}, prompt={1}".format(model_filename, user_message), file=sys.stderr, flush=True)
-    if isinstance(user_message, list):
-        MAX_HISTORY = 20
-        history_window = user_message[-MAX_HISTORY:]
-        prompt, boundary = get_prompt_and_boundary(model_filename, history_window)
+    print("UTGPT_LOG: Entering run_inference with model={0}".format(model_filename), file=sys.stderr, flush=True)
+    if isinstance(user_message, list) and len(user_message) > 0:
+        current_query = user_message[-1].get("content", "")
+        recent_history = user_message[-5:-1] if len(user_message) > 1 else []
+        exclude_texts = {current_query}
+        for msg in recent_history:
+            exclude_texts.add(msg.get("content", ""))
+        context_msgs = retrieve_relevant_context(current_query, exclude_texts, limit=3)
+        prompt, boundary = get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs)
     else:
-        prompt = "User: {0}\nAssistant:".format(user_message)
-        boundary = "Assistant:"
+        current_query = str(user_message)
+        context_msgs = retrieve_relevant_context(current_query, {current_query}, limit=3)
+        prompt, boundary = get_prompt_and_boundary(model_filename, current_query, [], context_msgs)
+    print("UTGPT_LOG: Constructed prompt: {0}".format(repr(prompt)), file=sys.stderr, flush=True)
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
@@ -719,22 +807,35 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
         _emit_done(done_callback, ok=False, error_message="Model file not found: {0}".format(model_filename))
         return False
 
-    cli_path = get_llama_cli_path()
+    cli_path = get_llama_completion_path() if os.path.exists(get_llama_completion_path()) else get_llama_cli_path()
     if not os.path.exists(cli_path):
         if LLAMA_CLI_ERROR:
-            error_msg = "Missing llama-cli. Downloader error: " + str(LLAMA_CLI_ERROR)
+            error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
         else:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
-        print("UTGPT_LOG: Error - llama-cli not found: {0}".format(error_msg), file=sys.stderr, flush=True)
+        print("UTGPT_LOG: Error - inference engine not found: {0}".format(error_msg), file=sys.stderr, flush=True)
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
     def worker():
         process = None
         try:
-            print("UTGPT_LOG: Launching llama-cli: {0}".format(cli_path), file=sys.stderr, flush=True)
-            process = subprocess.Popen(
-                [
+            is_completion = "llama-completion" in cli_path
+            print("UTGPT_LOG: Launching inference engine: {0}".format(cli_path), file=sys.stderr, flush=True)
+            
+            if is_completion:
+                args = [
+                    cli_path,
+                    "-m", model_path,
+                    "-p", prompt,
+                    "--temp", str(float(temperature)),
+                    "-n", str(int(max_tokens)),
+                    "-no-cnv",
+                    "--no-display-prompt",
+                    "--simple-io"
+                ]
+            else:
+                args = [
                     cli_path,
                     "-m", model_path,
                     "-p", prompt,
@@ -743,61 +844,123 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
                     "--no-display-prompt",
                     "-st",
                     "--simple-io"
-                ],
+                ]
+
+            process = subprocess.Popen(
+                args,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 universal_newlines=True,
                 bufsize=1
             )
             _register_process(process)
-            print("UTGPT_LOG: llama-cli launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
+            print("UTGPT_LOG: Inference engine launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
+
+            stderr_lines = []
+            def log_stderr():
+                try:
+                    for line in process.stderr:
+                        stderr_lines.append(line)
+                except Exception:
+                    pass
+
+            stderr_thread = threading.Thread(target=log_stderr)
+            stderr_thread.daemon = True
+            stderr_thread.start()
 
             output_buffer = ""
-            started = False
             has_emitted_content = False
-            
-            while True:
-                char = process.stdout.read(1)
-                if not char:
-                    break
-                
-                output_buffer += char
-                
-                if not started:
-                    if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
-                        print("UTGPT_LOG: Detected boundary, starting token stream", file=sys.stderr, flush=True)
-                        output_buffer = ""
-                        started = True
-                    continue
+
+            if is_completion:
+                print("UTGPT_LOG: Using simplified completion stdout read loop", file=sys.stderr, flush=True)
+                while True:
+                    char = process.stdout.read(1)
+                    if not char:
+                        break
                     
-                if "[ Prompt:" in output_buffer:
-                    print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
-                    break
+                    output_buffer += char
                     
-                if len(output_buffer) > 20:
-                    emit_char = output_buffer[0]
-                    output_buffer = output_buffer[1:]
+                    if len(output_buffer) > 20:
+                        emit_char = output_buffer[0]
+                        output_buffer = output_buffer[1:]
+                        if not has_emitted_content:
+                            if emit_char.strip() == "":
+                                continue
+                            else:
+                                has_emitted_content = True
+                        _emit_token(token_callback, emit_char)
+                
+                if output_buffer:
                     if not has_emitted_content:
-                        if emit_char.strip() == "":
-                            continue
-                        else:
-                            has_emitted_content = True
-                    _emit_token(token_callback, emit_char)
+                        output_buffer = output_buffer.lstrip()
+                    # Clean up llama-completion's end-of-text markers
+                    output_buffer = output_buffer.replace(" [end of text]", "").replace("[end of text]", "")
+                    if output_buffer:
+                        print("UTGPT_LOG: Emitting remaining completion buffer: {0}".format(repr(output_buffer)), file=sys.stderr, flush=True)
+                        _emit_token(token_callback, output_buffer)
+            else:
+                print("UTGPT_LOG: Using legacy cli boundary detection stdout read loop", file=sys.stderr, flush=True)
+                started = False
+                checked_banner = False
+                
+                while True:
+                    char = process.stdout.read(1)
+                    if not char:
+                        break
+                    
+                    output_buffer += char
+                    
+                    if not checked_banner:
+                        if len(output_buffer) >= 15:
+                            if "Loading model" in output_buffer:
+                                print("UTGPT_LOG: Detected interactive banner, waiting for boundary", file=sys.stderr, flush=True)
+                            else:
+                                print("UTGPT_LOG: No interactive banner detected, starting stream immediately", file=sys.stderr, flush=True)
+                                started = True
+                            checked_banner = True
+                    
+                    if not started:
+                        if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
+                            print("UTGPT_LOG: Detected boundary, starting token stream", file=sys.stderr, flush=True)
+                            output_buffer = ""
+                            started = True
+                        continue
+                        
+                    if "[ Prompt:" in output_buffer:
+                        print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
+                        break
+                        
+                    if len(output_buffer) > 20:
+                        emit_char = output_buffer[0]
+                        output_buffer = output_buffer[1:]
+                        if not has_emitted_content:
+                            if emit_char.strip() == "":
+                                continue
+                            else:
+                                has_emitted_content = True
+                        _emit_token(token_callback, emit_char)
 
-            if started and output_buffer:
-                remaining = output_buffer.split("[ Prompt:")[0]
-                if not has_emitted_content:
-                    remaining = remaining.lstrip()
-                if remaining:
-                    print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
-                    _emit_token(token_callback, remaining)
+                if not started and "Loading model" not in output_buffer:
+                    started = True
 
-            print("UTGPT_LOG: Waiting for llama-cli process to exit", file=sys.stderr, flush=True)
+                if started and output_buffer:
+                    remaining = output_buffer.split("[ Prompt:")[0]
+                    if not has_emitted_content:
+                        remaining = remaining.lstrip()
+                    if remaining:
+                        print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
+                        _emit_token(token_callback, remaining)
+
+            print("UTGPT_LOG: Waiting for process to exit", file=sys.stderr, flush=True)
             exit_code = process.wait()
-            print("UTGPT_LOG: llama-cli exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
+            stderr_thread.join(timeout=1.0)
+            print("UTGPT_LOG: Process exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
             if exit_code != 0:
-                _emit_done(done_callback, ok=False, error_message="llama-cli exited with status {0}".format(exit_code))
+                error_msg = "".join(stderr_lines).strip()
+                if not error_msg:
+                    error_msg = "Process exited with status {0}".format(exit_code)
+                _emit_done(done_callback, ok=False, error_message=error_msg)
                 return
 
             _emit_done(done_callback, ok=True, error_message="")
@@ -806,8 +969,11 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             _terminate_process(process)
             _emit_done(done_callback, ok=False, error_message=str(error))
         finally:
-            if process is not None and process.stdout is not None:
-                process.stdout.close()
+            if process is not None:
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()
             _unregister_process(process)
 
     thread = threading.Thread(target=worker)
