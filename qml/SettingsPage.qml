@@ -60,6 +60,9 @@ Page {
 
     property real temperature: 0.7
     property int maxTokens: 512
+    property int threads: 4
+    property int ctxSize: 2048
+    property string flashAttn: "auto"
     property string freeStorage: i18n.tr("Checking storage...")
     property var availableModels: root.availableModels
 
@@ -449,6 +452,96 @@ Page {
                                 return
                             }
                             settingsPage.maxTokens = snapped
+                        }
+                    }
+                }
+            }
+
+            // Card 2b: Performance Settings
+            Rectangle {
+                width: parent.width
+                height: perfSettingsColumn.implicitHeight + units.gu(3)
+                color: "#FFFFFF"
+                border.color: "#E2E8F0"
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: perfSettingsColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Performance Settings")
+                        font.bold: true
+                        color: "#1E293B"
+                    }
+
+                    Label {
+                        text: i18n.tr("CPU Threads") + ": " + settingsPage.threads
+                        color: "#475569"
+                        fontSize: "small"
+                    }
+
+                    Slider {
+                        id: threadsSlider
+                        width: parent.width
+                        minimumValue: 1
+                        maximumValue: 8
+                        value: settingsPage.threads
+                        live: true
+
+                        onValueChanged: {
+                            var snapped = Math.round(value)
+                            if (snapped !== value) {
+                                value = snapped
+                                return
+                            }
+                            settingsPage.threads = snapped
+                        }
+                    }
+                    
+                    Label {
+                        text: i18n.tr("Recommended: 4 threads on octa-core devices to avoid overheating and thermal throttling.")
+                        color: "#94A3B8"
+                        fontSize: "x-small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
+                    }
+
+                    Label {
+                        text: i18n.tr("Context Size Limit")
+                        color: "#475569"
+                        fontSize: "small"
+                    }
+
+                    QQC2.ComboBox {
+                        id: ctxSelector
+                        width: parent.width
+                        model: ["512", "1024", "2048", "4096", "8192"]
+                        currentIndex: {
+                            var idx = model.indexOf(settingsPage.ctxSize.toString())
+                            return idx >= 0 ? idx : 2 // Default to 2048
+                        }
+                        onActivated: {
+                            settingsPage.ctxSize = parseInt(model[currentIndex])
+                        }
+                    }
+
+                    Label {
+                        text: i18n.tr("Flash Attention")
+                        color: "#475569"
+                        fontSize: "small"
+                    }
+
+                    QQC2.ComboBox {
+                        id: faSelector
+                        width: parent.width
+                        model: ["auto", "on", "off"]
+                        currentIndex: model.indexOf(settingsPage.flashAttn) >= 0 ? model.indexOf(settingsPage.flashAttn) : 0
+                        onActivated: {
+                            settingsPage.flashAttn = model[currentIndex]
                         }
                     }
                 }
