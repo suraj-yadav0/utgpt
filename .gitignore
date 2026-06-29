@@ -1,3 +1,28 @@
+# Clickable build directories
 /build/
 /.clickable/
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Qt / CMake / Creator files
+CMakeLists.txt.user
+*.user
+
+# Translation templates
 *.pot
+
+# System / IDE config files
+.DS_Store
+.directory
+.idea/
+.vscode/
+*.log
