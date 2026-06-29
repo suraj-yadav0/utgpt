@@ -83,6 +83,22 @@ Page {
         python.call("backend.stop_all_inference", [])
     }
 
+    function stopAndSaveCurrentResponse() {
+        if (!isResponding) return;
+        console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        python.call("backend.stop_all_inference", [])
+        if (messageModel.count > 0) {
+            var lastIndex = messageModel.count - 1
+            var lastItem = messageModel.get(lastIndex)
+            if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
+                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
+            }
+        }
+        isResponding = false
+        pendingRequestId = ""
+        userStopped = false
+    }
+
     function startNewChat() {
         messageModel.clear()
         composer.text = ""

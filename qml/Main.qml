@@ -107,6 +107,9 @@ MainView {
     }
 
     function deleteSession(sessionId) {
+        if (root.currentSessionId === sessionId) {
+            chatPage.stopAndSaveCurrentResponse()
+        }
         python.call("backend.delete_session", [sessionId], function(ok) {
             if (ok) {
                 if (root.currentSessionId === sessionId) {
@@ -129,6 +132,7 @@ MainView {
     }
 
     function startNewChat() {
+        chatPage.stopAndSaveCurrentResponse()
         root.currentSessionId = null
         chatPage.startNewChat()
         root.currentTabIndex = 0
@@ -489,6 +493,7 @@ MainView {
                         anchors.fill: parent
                         propagateComposedEvents: true
                         onClicked: {
+                            chatPage.stopAndSaveCurrentResponse()
                             root.currentSessionId = modelData.id
                             root.currentTabIndex = 0 // Go to Chat Page
                             chatPage.loadHistory(modelData.id)
