@@ -42,16 +42,9 @@ MainView {
             refreshModels()
             loadCatalog()
             refreshSessions()
-            // Query latest session ID and load it
-            python.call("backend.get_latest_session_id", [], function(latestId) {
-                if (latestId) {
-                    root.currentSessionId = latestId
-                    chatPage.loadHistory(latestId)
-                } else {
-                    root.currentSessionId = null
-                    chatPage.loadHistory(null)
-                }
-            })
+            // Start with a new chat on startup
+            root.currentSessionId = null
+            chatPage.startNewChat()
         }
     }
 

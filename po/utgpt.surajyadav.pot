@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-29 11:42+0000\n"
+"POT-Creation-Date: 2026-06-29 11:49+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -140,19 +140,19 @@ msgstr ""
 msgid "Download"
 msgstr ""
 
-#: ../qml/Main.qml:158
+#: ../qml/Main.qml:151
 msgid "Backend Error"
 msgstr ""
 
-#: ../qml/Main.qml:167
+#: ../qml/Main.qml:160
 msgid "OK"
 msgstr ""
 
-#: ../qml/Main.qml:332
+#: ../qml/Main.qml:325
 msgid "Chat History"
 msgstr ""
 
-#: ../qml/Main.qml:518
+#: ../qml/Main.qml:511
 msgid "Loading Python backend..."
 msgstr ""
 
