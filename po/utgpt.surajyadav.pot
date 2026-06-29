@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-29 11:01+0000\n"
+"POT-Creation-Date: 2026-06-29 11:42+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -38,61 +38,61 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-#: ../qml/ChatPage.qml:132
+#: ../qml/ChatPage.qml:128
 msgid "Generation stopped by user."
 msgstr ""
 
-#: ../qml/ChatPage.qml:272 ../qml/ChatPage.qml:279
+#: ../qml/ChatPage.qml:268 ../qml/ChatPage.qml:275
 msgid "Thinking"
 msgstr ""
 
-#: ../qml/ChatPage.qml:342
+#: ../qml/ChatPage.qml:338
 msgid "Model:"
 msgstr ""
 
-#: ../qml/ChatPage.qml:373
+#: ../qml/ChatPage.qml:369
 msgid "No models downloaded - tap to download one"
 msgstr ""
 
-#: ../qml/ChatPage.qml:501
+#: ../qml/ChatPage.qml:497
 msgid "Copied!"
 msgstr ""
 
-#: ../qml/ChatPage.qml:501
+#: ../qml/ChatPage.qml:497
 msgid "Copy"
 msgstr ""
 
-#: ../qml/ChatPage.qml:544
+#: ../qml/ChatPage.qml:540
 msgid "Type a message..."
 msgstr ""
 
-#: ../qml/ChatPage.qml:554
+#: ../qml/ChatPage.qml:550
 msgid "Send"
 msgstr ""
 
-#: ../qml/ChatPage.qml:554
+#: ../qml/ChatPage.qml:550
 msgid "Stop"
 msgstr ""
 
-#: ../qml/ChatPage.qml:595
+#: ../qml/ChatPage.qml:591
 msgid "Welcome to UTGPT"
 msgstr ""
 
-#: ../qml/ChatPage.qml:606
+#: ../qml/ChatPage.qml:602
 msgid ""
 "Ask anything! Choose a model above or type a message to start the "
 "conversation."
 msgstr ""
 
-#: ../qml/ChatPage.qml:616
+#: ../qml/ChatPage.qml:612
 msgid "Try asking:"
 msgstr ""
 
-#: ../qml/ChatPage.qml:626
+#: ../qml/ChatPage.qml:622
 msgid "What is Ubuntu Touch?"
 msgstr ""
 
-#: ../qml/ChatPage.qml:637
+#: ../qml/ChatPage.qml:633
 msgid "Explain QML in simple terms"
 msgstr ""
 

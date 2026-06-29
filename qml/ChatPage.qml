@@ -55,11 +55,7 @@ Page {
     property string pendingRequestId: ""
     property bool userStopped: false
 
-    onBackendReadyChanged: {
-        if (backendReady) {
-            loadHistory(root.currentSessionId)
-        }
-    }
+
 
     function loadHistory(sessionId) {
         console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
@@ -144,7 +140,7 @@ Page {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
             if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
-                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId])
+                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
             }
         }
 
@@ -157,7 +153,12 @@ Page {
             return
         }
 
-        var activeModel = model ? model : "dummy-model.gguf"
+        if (!model) {
+            messageModel.append({ "role": "assistant", "text": "Select a model in Settings before chatting." })
+            composer.text = ""
+            scrollToBottom()
+            return
+        }
 
         // Build history array of previous messages to pass as context
         var history = []
@@ -171,7 +172,7 @@ Page {
         history.push({ "role": "user", "content": trimmed })
 
         // Save user message to database
-        python.call("backend.add_chat_message", ["user", trimmed, root.currentSessionId], function(newSessionId) {
+        python.call("backend.add_chat_message", ["user", trimmed, root.currentSessionId || ""], function(newSessionId) {
             if (newSessionId && root.currentSessionId !== newSessionId) {
                 root.currentSessionId = newSessionId
                 root.refreshSessions()
@@ -187,7 +188,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [activeModel, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -454,7 +455,7 @@ Page {
                             anchors.margins: units.gu(1)
                             text: model.text
                             wrapMode: Text.Wrap
-                            textFormat: model.role === "assistant" ? Text.MarkdownText : Text.PlainText
+                            textFormat: model.role === "assistant" ? (typeof Text.MarkdownText !== "undefined" ? Text.MarkdownText : Text.AutoText) : Text.PlainText
                             color: model.role === "user" ? "#FFFFFF" : "#1E293B"
                         }
                     }
@@ -639,15 +640,4 @@ Page {
         }
     }
 
-    Timer {
-        id: testTimer
-        interval: 4000
-        repeat: false
-        running: true
-        onTriggered: {
-            console.log("QML_LOG: Simulating test message send...")
-            composer.text = "What is Ubuntu Touch?"
-            chatPage.sendMessage()
-        }
-    }
 }
