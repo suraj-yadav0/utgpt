@@ -21,8 +21,26 @@ Page {
             Action {
                 iconName: "navigation-menu"
                 text: i18n.tr("Menu")
-                visible: downloadPage.width < units.gu(60)
+                visible: true
                 onTriggered: downloadPage.toggleSidebar()
+            }
+        ]
+        trailingActionBar.numberOfSlots: 3
+        trailingActionBar.actions: [
+            Action {
+                iconName: "message"
+                text: i18n.tr("Chat")
+                onTriggered: root.currentTabIndex = 0
+            },
+            Action {
+                iconName: "package-x-generic-symbolic"
+                text: i18n.tr("Models")
+                onTriggered: root.currentTabIndex = 1
+            },
+            Action {
+                iconName: "settings"
+                text: i18n.tr("Settings")
+                onTriggered: root.currentTabIndex = 2
             }
         ]
     }

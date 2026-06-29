@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: utgpt.surajyadav\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-16 18:47+0000\n"
+"POT-Creation-Date: 2026-06-29 10:50+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,69 +18,81 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 
 #: ../qml/ChatPage.qml:19
-msgid "C H A T"
+msgid "L O C A L M I N D"
 msgstr ""
 
-#: ../qml/ChatPage.qml:24 ../qml/DownloadPage.qml:23 ../qml/Main.qml:209
-#: ../qml/SettingsPage.qml:24
+#: ../qml/ChatPage.qml:24 ../qml/DownloadPage.qml:23 ../qml/SettingsPage.qml:24
 msgid "Menu"
 msgstr ""
 
-#: ../qml/ChatPage.qml:80
+#: ../qml/ChatPage.qml:33 ../qml/DownloadPage.qml:32 ../qml/SettingsPage.qml:33
+msgid "Chat"
+msgstr ""
+
+#: ../qml/ChatPage.qml:38 ../qml/DownloadPage.qml:37 ../qml/SettingsPage.qml:38
+msgid "Models"
+msgstr ""
+
+#: ../qml/ChatPage.qml:43 ../qml/DownloadPage.qml:42 ../qml/SettingsPage.qml:19
+#: ../qml/SettingsPage.qml:43
+msgid "Settings"
+msgstr ""
+
+#: ../qml/ChatPage.qml:131
 msgid "Generation stopped by user."
 msgstr ""
 
-#: ../qml/ChatPage.qml:191 ../qml/ChatPage.qml:198
+#: ../qml/ChatPage.qml:271 ../qml/ChatPage.qml:278
 msgid "Thinking"
 msgstr ""
 
-#: ../qml/ChatPage.qml:261
+#: ../qml/ChatPage.qml:341
 msgid "Model:"
 msgstr ""
 
-#: ../qml/ChatPage.qml:292
+#: ../qml/ChatPage.qml:372
 msgid "No models downloaded - tap to download one"
 msgstr ""
 
-#: ../qml/ChatPage.qml:420
+#: ../qml/ChatPage.qml:500
 msgid "Copied!"
 msgstr ""
 
-#: ../qml/ChatPage.qml:420
+#: ../qml/ChatPage.qml:500
 msgid "Copy"
 msgstr ""
 
-#: ../qml/ChatPage.qml:463
+#: ../qml/ChatPage.qml:543
 msgid "Type a message..."
 msgstr ""
 
-#: ../qml/ChatPage.qml:473
+#: ../qml/ChatPage.qml:553
 msgid "Send"
 msgstr ""
 
-#: ../qml/ChatPage.qml:473
+#: ../qml/ChatPage.qml:553
 msgid "Stop"
 msgstr ""
 
-#: ../qml/ChatPage.qml:514
+#: ../qml/ChatPage.qml:594
 msgid "Welcome to UTGPT"
 msgstr ""
 
-#: ../qml/ChatPage.qml:525
+#: ../qml/ChatPage.qml:605
 msgid ""
 "Ask anything! Choose a model above or type a message to start the "
 "conversation."
 msgstr ""
 
-#: ../qml/ChatPage.qml:535
+#: ../qml/ChatPage.qml:615
 msgid "Try asking:"
 msgstr ""
 
-#: ../qml/ChatPage.qml:545
+#: ../qml/ChatPage.qml:625
 msgid "What is Ubuntu Touch?"
 msgstr ""
 
-#: ../qml/ChatPage.qml:556
+#: ../qml/ChatPage.qml:636
 msgid "Explain QML in simple terms"
 msgstr ""
 
@@ -88,114 +100,126 @@ msgstr ""
 msgid "Download Models"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:334
+#: ../qml/DownloadPage.qml:309
+msgid "Search models..."
+msgstr ""
+
+#: ../qml/DownloadPage.qml:359
 msgid "Paused: "
 msgstr ""
 
-#: ../qml/DownloadPage.qml:337
+#: ../qml/DownloadPage.qml:362
 msgid "Connecting..."
 msgstr ""
 
-#: ../qml/DownloadPage.qml:339
+#: ../qml/DownloadPage.qml:364
 msgid "Downloading: "
 msgstr ""
 
-#: ../qml/DownloadPage.qml:363
+#: ../qml/DownloadPage.qml:388
 msgid "Ready"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:370
+#: ../qml/DownloadPage.qml:395
 msgid "Delete"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:381
+#: ../qml/DownloadPage.qml:406
 msgid "Pause"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:381
+#: ../qml/DownloadPage.qml:406
 msgid "Resume"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:392
+#: ../qml/DownloadPage.qml:417
 msgid "Cancel"
 msgstr ""
 
-#: ../qml/DownloadPage.qml:399
+#: ../qml/DownloadPage.qml:424
 msgid "Download"
 msgstr ""
 
-#: ../qml/Main.qml:96
+#: ../qml/Main.qml:158
 msgid "Backend Error"
 msgstr ""
 
-#: ../qml/Main.qml:105
+#: ../qml/Main.qml:167
 msgid "OK"
 msgstr ""
 
-#: ../qml/Main.qml:253
-msgid "Chat"
+#: ../qml/Main.qml:332
+msgid "Chat History"
 msgstr ""
 
-#: ../qml/Main.qml:326
-msgid "Models"
-msgstr ""
-
-#: ../qml/Main.qml:399 ../qml/SettingsPage.qml:19
-msgid "Settings"
-msgstr ""
-
-#: ../qml/Main.qml:491
+#: ../qml/Main.qml:518
 msgid "Loading Python backend..."
 msgstr ""
 
-#: ../qml/SettingsPage.qml:36
+#: ../qml/SettingsPage.qml:63
 msgid "Checking storage..."
 msgstr ""
 
-#: ../qml/SettingsPage.qml:47
+#: ../qml/SettingsPage.qml:74
 msgid "Storage unavailable"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:115
+#: ../qml/SettingsPage.qml:247
 msgid "Active Model"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:121
+#: ../qml/SettingsPage.qml:253
 msgid "No models downloaded yet"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:159
+#: ../qml/SettingsPage.qml:292
+msgid "Model Specifications"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:306
+msgid "Model Name:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:318
+msgid "Developer:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:330
+msgid "File Size:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:342
+msgid "Context Window:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:354
+msgid "Quantization:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:366
+msgid "Recommended For:"
+msgstr ""
+
+#: ../qml/SettingsPage.qml:399
 msgid "Generation Settings"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:165
+#: ../qml/SettingsPage.qml:405
 msgid "Temperature"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:189
+#: ../qml/SettingsPage.qml:429
 msgid " tokens"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:189
+#: ../qml/SettingsPage.qml:429
 msgid "Max response length"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:230
+#: ../qml/SettingsPage.qml:473
 msgid "Storage"
 msgstr ""
 
-#: ../qml/SettingsPage.qml:259
-msgid "About"
-msgstr ""
-
-#: ../qml/SettingsPage.qml:265
-msgid "App icon designed by Rikas Dzihab from Flaticon."
-msgstr ""
-
-#: ../qml/SettingsPage.qml:274
-msgid "View Designer Profile"
-msgstr ""
-
-#: ../qml/SettingsPage.qml:283
+#: ../qml/SettingsPage.qml:489
 msgid "Clear chat history"
 msgstr ""

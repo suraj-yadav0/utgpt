@@ -609,6 +609,13 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            created_at REAL NOT NULL
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             role TEXT NOT NULL,
@@ -616,34 +623,120 @@ def init_db():
             timestamp REAL NOT NULL
         )
     """)
+    
+    # Check if 'session_id' column exists in messages table
+    cursor.execute("PRAGMA table_info(messages)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'session_id' not in columns:
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+    # Assign orphaned messages (from previous single-chat versions) to a default session
+    cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id IS NULL")
+    null_count = cursor.fetchone()[0]
+    if null_count > 0:
+        cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Previous Chat", time.time()))
+        default_session_id = cursor.lastrowid
+        cursor.execute("UPDATE messages SET session_id = ? WHERE session_id IS NULL", (default_session_id,))
+        conn.commit()
+
     # Prune corrupt entries from previous session implementations
     cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
     conn.commit()
     conn.close()
 
-def load_chat_history():
+def get_sessions():
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT role, text FROM messages ORDER BY id ASC")
+    cursor.execute("SELECT id, title, created_at FROM sessions ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r[0], "title": r[1], "created_at": r[2]} for r in rows]
+
+def get_latest_session_id():
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def delete_session(session_id):
+    init_db()
+    if session_id is None or session_id == "" or session_id == 0:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+    cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def rename_session(session_id, title):
+    init_db()
+    if session_id is None or session_id == "" or session_id == 0 or not title:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE sessions SET title = ? WHERE id = ?", (title.strip(), session_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def load_chat_history(session_id=None):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # If no session_id provided, default to the latest session (if any)
+    if session_id is None or session_id == "" or session_id == 0:
+        cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return []
+        session_id = row[0]
+
+    cursor.execute("SELECT role, text FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
     rows = cursor.fetchall()
     conn.close()
     return [{"role": r, "text": t} for r, t in rows]
 
-def add_chat_message(role, text):
+def add_chat_message(role, text, session_id=None):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO messages (role, text, timestamp) VALUES (?, ?, ?)", (role, text, time.time()))
+    
+    # Auto-create session if none active/provided
+    if session_id is None or session_id == "" or session_id == 0:
+        title = text.strip()
+        title = " ".join(title.split())  # Collapse whitespaces/newlines
+        if len(title) > 30:
+            title = title[:27] + "..."
+        if not title:
+            title = "New Chat"
+            
+        cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", (title, time.time()))
+        session_id = cursor.lastrowid
+        
+    cursor.execute("INSERT INTO messages (session_id, role, text, timestamp) VALUES (?, ?, ?, ?)", 
+                   (session_id, role, text, time.time()))
     conn.commit()
     conn.close()
-    return True
+    return session_id
 
 def clear_chat_history():
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM messages")
+    cursor.execute("DELETE FROM sessions")
     conn.commit()
     conn.close()
     return True

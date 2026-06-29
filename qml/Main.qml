@@ -30,6 +30,8 @@ MainView {
     property int maxTokens: 512
     property bool sidebarOpen: false
     property var modelCatalog: []
+    property var currentSessionId: null
+    property var chatSessions: []
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -39,6 +41,17 @@ MainView {
         if (backendReady) {
             refreshModels()
             loadCatalog()
+            refreshSessions()
+            // Query latest session ID and load it
+            python.call("backend.get_latest_session_id", [], function(latestId) {
+                if (latestId) {
+                    root.currentSessionId = latestId
+                    chatPage.loadHistory(latestId)
+                } else {
+                    root.currentSessionId = null
+                    chatPage.loadHistory(null)
+                }
+            })
         }
     }
 
@@ -69,6 +82,44 @@ MainView {
                 root.selectedModel = root.availableModels[0]
             }
         })
+    }
+
+    function refreshSessions() {
+        if (!backendReady) return;
+        python.call("backend.get_sessions", [], function(result) {
+            root.chatSessions = result || []
+        })
+    }
+
+    function deleteSession(sessionId) {
+        python.call("backend.delete_session", [sessionId], function(ok) {
+            if (ok) {
+                if (root.currentSessionId === sessionId) {
+                    // Try to load the next/latest session
+                    python.call("backend.get_latest_session_id", [], function(latestId) {
+                        if (latestId) {
+                            root.currentSessionId = latestId
+                            chatPage.loadHistory(latestId)
+                        } else {
+                            root.currentSessionId = null
+                            chatPage.loadHistory(null)
+                        }
+                        refreshSessions()
+                    })
+                } else {
+                    refreshSessions()
+                }
+            }
+        })
+    }
+
+    function startNewChat() {
+        root.currentSessionId = null
+        chatPage.startNewChat()
+        root.currentTabIndex = 0
+        if (root.width < units.gu(60)) {
+            root.sidebarOpen = false
+        }
     }
 
     function showError(message) {
@@ -124,9 +175,14 @@ MainView {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.right: parent.right
-        anchors.left: (root.width < units.gu(60)) ? parent.left : sidebar.right
+        anchors.left: parent.left
+        anchors.leftMargin: (root.width < units.gu(60)) ? 0 : (root.sidebarOpen ? sidebar.width : 0)
         visible: root.backendReady
         spacing: 0
+
+        Behavior on anchors.leftMargin {
+            NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
+        }
 
         Item {
             Layout.fillWidth: true
@@ -171,7 +227,41 @@ MainView {
         }
     }
 
-    // Semi-transparent overlay to close sidebar on mobile when tapping outside
+    // MouseArea at the left edge to open the sidebar on swipe right (on mobile only)
+    MouseArea {
+        id: leftSwipeArea
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: units.gu(2)
+        z: 98 // Just below the sidebar and overlay
+
+        // Active on mobile when sidebar is closed
+        enabled: root.backendReady && (root.width < units.gu(60)) && !root.sidebarOpen
+
+        property real startX: 0
+        property bool isDragging: false
+
+        onPressed: {
+            startX = mouse.x
+            isDragging = true
+        }
+
+        onPositionChanged: {
+            if (!isDragging) return
+            var deltaX = mouse.x - startX
+            if (deltaX > units.gu(4)) {
+                root.sidebarOpen = true
+                isDragging = false
+            }
+        }
+
+        onReleased: {
+            isDragging = false
+        }
+    }
+
+    // Semi-transparent overlay to close sidebar on mobile when tapping/swiping outside
     Rectangle {
         id: sidebarOverlay
         anchors.fill: parent
@@ -183,6 +273,28 @@ MainView {
         MouseArea {
             anchors.fill: parent
             onClicked: root.sidebarOpen = false
+
+            // Detect swipe left to close
+            property real startX: 0
+            property bool isDragging: false
+
+            onPressed: {
+                startX = mouse.x
+                isDragging = true
+            }
+
+            onPositionChanged: {
+                if (!isDragging) return
+                var deltaX = mouse.x - startX
+                if (deltaX < -units.gu(4)) {
+                    root.sidebarOpen = false
+                    isDragging = false
+                }
+            }
+
+            onReleased: {
+                isDragging = false
+            }
         }
     }
 
@@ -194,7 +306,7 @@ MainView {
         width: units.gu(30)
         color: "#FFFFFF" // Clean white background
 
-        x: (root.width < units.gu(60)) ? (root.sidebarOpen ? 0 : -width) : 0
+        x: root.sidebarOpen ? 0 : -width
         Behavior on x {
             NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
         }
@@ -217,11 +329,39 @@ MainView {
                     spacing: units.gu(1.5)
 
                     Label {
-                        text: i18n.tr("Menu")
+                        text: i18n.tr("Chat History")
                         color: "white"
                         font.bold: true
                         fontSize: "large"
+                        Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    // "+" button to start a new chat
+                    Rectangle {
+                        width: units.gu(4)
+                        height: units.gu(4)
+                        radius: units.gu(0.5)
+                        color: "transparent"
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Icon {
+                            anchors.centerIn: parent
+                            name: "add"
+                            width: units.gu(2.4)
+                            height: units.gu(2.4)
+                            color: "white"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            onEntered: parent.color = "rgba(255,255,255,0.15)"
+                            onExited: parent.color = "transparent"
+                            onClicked: {
+                                root.startNewChat()
+                            }
+                        }
                     }
                 }
             }
@@ -233,225 +373,101 @@ MainView {
                 color: "#E2E8F0"
             }
 
-            // Navigation Tabs
-            Column {
+            // Sessions List
+            ListView {
+                id: sessionsListView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.topMargin: 0
+                clip: true
+                model: root.chatSessions
                 spacing: 0
 
-                // Chat Tab
-                Rectangle {
-                    width: parent.width
+                delegate: Rectangle {
+                    width: sessionsListView.width
                     height: units.gu(6.5)
-                    color: root.currentTabIndex === 0 ? "#FFF5F0" : "#FFFFFF"
+                    color: root.currentSessionId === modelData.id ? "#FFF5F0" : "#FFFFFF"
+
+                    // Orange indicator pill on the left
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: units.gu(0.4)
+                        color: "#E95420"
+                        visible: root.currentSessionId === modelData.id
+                    }
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        spacing: units.gu(1.5)
+                        anchors.leftMargin: units.gu(1.5)
+                        anchors.rightMargin: units.gu(1.5)
+                        spacing: units.gu(1)
 
                         Icon {
                             name: "message"
-                            width: units.gu(2.4)
-                            height: units.gu(2.4)
-                            color: root.currentTabIndex === 0 ? "#E95420" : "#64748B"
+                            width: units.gu(2.2)
+                            height: units.gu(2.2)
+                            color: root.currentSessionId === modelData.id ? "#E95420" : "#64748B"
                             Layout.alignment: Qt.AlignVCenter
                         }
 
+                        // Session title label
                         Label {
-                            text: i18n.tr("Chat")
-                            color: root.currentTabIndex === 0 ? "#E95420" : "#475569"
-                            font.bold: root.currentTabIndex === 0
+                            text: modelData.title
+                            color: root.currentSessionId === modelData.id ? "#E95420" : "#475569"
+                            font.bold: root.currentSessionId === modelData.id
                             fontSize: "medium"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        Item {
                             Layout.fillWidth: true
-                        }
-
-                        Icon {
-                            name: "go-next-symbolic"
-                            width: units.gu(1.6)
-                            height: units.gu(1.6)
-                            color: root.currentTabIndex === 0 ? "#E95420" : "#CBD5E1"
+                            elide: Text.ElideRight
                             Layout.alignment: Qt.AlignVCenter
                         }
-                    }
 
-                    // Orange indicator pill on the left spanning full height
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: units.gu(0.4)
-                        color: "#E95420"
-                        visible: root.currentTabIndex === 0
-                    }
+                        // Trash button to delete session
+                        Rectangle {
+                            width: units.gu(3.5)
+                            height: units.gu(3.5)
+                            radius: units.gu(0.5)
+                            color: "transparent"
+                            Layout.alignment: Qt.AlignVCenter
 
-                    // Bottom separator line
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        height: 1
-                        color: "#E2E8F0"
-                    }
+                            Icon {
+                                anchors.centerIn: parent
+                                name: "delete"
+                                width: units.gu(1.8)
+                                height: units.gu(1.8)
+                                color: "#94A3B8"
+                            }
 
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            root.currentTabIndex = 0
-                            if (root.width < units.gu(60)) {
-                                root.sidebarOpen = false
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onEntered: parent.color = "#FEE2E2"
+                                onExited: parent.color = "transparent"
+                                onClicked: {
+                                    root.deleteSession(modelData.id)
+                                }
                             }
                         }
                     }
-                }
-
-                // Models Tab
-                Rectangle {
-                    width: parent.width
-                    height: units.gu(6.5)
-                    color: root.currentTabIndex === 1 ? "#FFF5F0" : "#FFFFFF"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        spacing: units.gu(1.5)
-
-                        Icon {
-                            name: "package-x-generic-symbolic"
-                            width: units.gu(2.4)
-                            height: units.gu(2.4)
-                            color: root.currentTabIndex === 1 ? "#E95420" : "#64748B"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        Label {
-                            text: i18n.tr("Models")
-                            color: root.currentTabIndex === 1 ? "#E95420" : "#475569"
-                            font.bold: root.currentTabIndex === 1
-                            fontSize: "medium"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                        }
-
-                        Icon {
-                            name: "go-next-symbolic"
-                            width: units.gu(1.6)
-                            height: units.gu(1.6)
-                            color: root.currentTabIndex === 1 ? "#E95420" : "#CBD5E1"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-                    }
-
-                    // Orange indicator pill on the left spanning full height
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: units.gu(0.4)
-                        color: "#E95420"
-                        visible: root.currentTabIndex === 1
-                    }
 
                     // Bottom separator line
                     Rectangle {
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
+                        anchors.leftMargin: units.gu(1.5)
+                        anchors.rightMargin: units.gu(1.5)
                         height: 1
                         color: "#E2E8F0"
                     }
 
                     MouseArea {
                         anchors.fill: parent
+                        propagateComposedEvents: true
                         onClicked: {
-                            root.currentTabIndex = 1
-                            if (root.width < units.gu(60)) {
-                                root.sidebarOpen = false
-                            }
-                        }
-                    }
-                }
-
-                // Settings Tab
-                Rectangle {
-                    width: parent.width
-                    height: units.gu(6.5)
-                    color: root.currentTabIndex === 2 ? "#FFF5F0" : "#FFFFFF"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        spacing: units.gu(1.5)
-
-                        Icon {
-                            name: "settings"
-                            width: units.gu(2.4)
-                            height: units.gu(2.4)
-                            color: root.currentTabIndex === 2 ? "#E95420" : "#64748B"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        Label {
-                            text: i18n.tr("Settings")
-                            color: root.currentTabIndex === 2 ? "#E95420" : "#475569"
-                            font.bold: root.currentTabIndex === 2
-                            fontSize: "medium"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                        }
-
-                        Icon {
-                            name: "go-next-symbolic"
-                            width: units.gu(1.6)
-                            height: units.gu(1.6)
-                            color: root.currentTabIndex === 2 ? "#E95420" : "#CBD5E1"
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-                    }
-
-                    // Orange indicator pill on the left spanning full height
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: units.gu(0.4)
-                        color: "#E95420"
-                        visible: root.currentTabIndex === 2
-                    }
-
-                    // Bottom separator line
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        height: 1
-                        color: "#E2E8F0"
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            root.currentTabIndex = 2
+                            root.currentSessionId = modelData.id
+                            root.currentTabIndex = 0 // Go to Chat Page
+                            chatPage.loadHistory(modelData.id)
                             if (root.width < units.gu(60)) {
                                 root.sidebarOpen = false
                             }

@@ -22,8 +22,26 @@ Page {
             Action {
                 iconName: "navigation-menu"
                 text: i18n.tr("Menu")
-                visible: chatPage.width < units.gu(60)
+                visible: true
                 onTriggered: chatPage.toggleSidebar()
+            }
+        ]
+        trailingActionBar.numberOfSlots: 3
+        trailingActionBar.actions: [
+            Action {
+                iconName: "message"
+                text: i18n.tr("Chat")
+                onTriggered: root.currentTabIndex = 0
+            },
+            Action {
+                iconName: "package-x-generic-symbolic"
+                text: i18n.tr("Models")
+                onTriggered: root.currentTabIndex = 1
+            },
+            Action {
+                iconName: "settings"
+                text: i18n.tr("Settings")
+                onTriggered: root.currentTabIndex = 2
             }
         ]
     }
@@ -39,12 +57,16 @@ Page {
 
     onBackendReadyChanged: {
         if (backendReady) {
-            loadHistory()
+            loadHistory(root.currentSessionId)
         }
     }
 
-    function loadHistory() {
-        python.call("backend.load_chat_history", [], function(result) {
+    function loadHistory(sessionId) {
+        if (sessionId === null || sessionId === undefined) {
+            messageModel.clear()
+            return
+        }
+        python.call("backend.load_chat_history", [sessionId], function(result) {
             messageModel.clear()
             if (result && result.length > 0) {
                 for (var i = 0; i < result.length; i++) {
@@ -61,12 +83,22 @@ Page {
         python.call("backend.stop_all_inference", [])
     }
 
+    function startNewChat() {
+        messageModel.clear()
+        composer.text = ""
+        isResponding = false
+        pendingRequestId = ""
+    }
+
     function clearHistory() {
         messageModel.clear()
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
-        python.call("backend.clear_chat_history", [])
+        python.call("backend.clear_chat_history", [], function() {
+            root.currentSessionId = null
+            root.refreshSessions()
+        })
     }
 
     function scrollToBottom() {
@@ -111,7 +143,7 @@ Page {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
             if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
-                python.call("backend.add_chat_message", ["assistant", lastItem.text])
+                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId])
             }
         }
 
@@ -143,7 +175,12 @@ Page {
         history.push({ "role": "user", "content": trimmed })
 
         // Save user message to database
-        python.call("backend.add_chat_message", ["user", trimmed])
+        python.call("backend.add_chat_message", ["user", trimmed, root.currentSessionId], function(newSessionId) {
+            if (newSessionId && root.currentSessionId !== newSessionId) {
+                root.currentSessionId = newSessionId
+                root.refreshSessions()
+            }
+        })
 
         messageModel.append({ "role": "user", "text": trimmed })
         messageModel.append({ "role": "assistant", "text": "Thinking" })
