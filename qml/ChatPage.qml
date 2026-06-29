@@ -51,6 +51,9 @@ Page {
     property string model: ""
     property real temperature: 0.7
     property int maxTokens: 512
+    property int threads: 4
+    property int ctxSize: 2048
+    property string flashAttn: "auto"
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
@@ -78,6 +81,22 @@ Page {
         if (!isResponding) return;
         userStopped = true
         python.call("backend.stop_all_inference", [])
+    }
+
+    function stopAndSaveCurrentResponse() {
+        if (!isResponding) return;
+        console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        python.call("backend.stop_all_inference", [])
+        if (messageModel.count > 0) {
+            var lastIndex = messageModel.count - 1
+            var lastItem = messageModel.get(lastIndex)
+            if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
+                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
+            }
+        }
+        isResponding = false
+        pendingRequestId = ""
+        userStopped = false
     }
 
     function startNewChat() {
@@ -188,7 +207,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1

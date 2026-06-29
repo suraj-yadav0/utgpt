@@ -10,6 +10,7 @@ import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
 import io.thp.pyotherside 1.4
+import Qt.labs.settings 1.0
 
 MainView {
     id: root
@@ -21,17 +22,38 @@ MainView {
     width: units.gu(45)
     height: units.gu(75)
 
+    Settings {
+        id: appSettings
+        category: "General"
+        property string selectedModel: ""
+        property real temperature: 0.7
+        property int maxTokens: 512
+        property int threads: 4
+        property int ctxSize: 2048
+        property string flashAttn: "auto"
+    }
+
     property bool backendReady: false
     property string backendError: ""
     property int currentTabIndex: 0
-    property string selectedModel: ""
+    property string selectedModel: appSettings.selectedModel
     property var availableModels: []
-    property real temperature: 0.7
-    property int maxTokens: 512
+    property real temperature: appSettings.temperature
+    property int maxTokens: appSettings.maxTokens
+    property int threads: appSettings.threads
+    property int ctxSize: appSettings.ctxSize
+    property string flashAttn: appSettings.flashAttn
     property bool sidebarOpen: false
     property var modelCatalog: []
     property var currentSessionId: null
     property var chatSessions: []
+
+    onSelectedModelChanged: appSettings.selectedModel = selectedModel
+    onTemperatureChanged: appSettings.temperature = temperature
+    onMaxTokensChanged: appSettings.maxTokens = maxTokens
+    onThreadsChanged: appSettings.threads = threads
+    onCtxSizeChanged: appSettings.ctxSize = ctxSize
+    onFlashAttnChanged: appSettings.flashAttn = flashAttn
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -85,6 +107,9 @@ MainView {
     }
 
     function deleteSession(sessionId) {
+        if (root.currentSessionId === sessionId) {
+            chatPage.stopAndSaveCurrentResponse()
+        }
         python.call("backend.delete_session", [sessionId], function(ok) {
             if (ok) {
                 if (root.currentSessionId === sessionId) {
@@ -107,6 +132,7 @@ MainView {
     }
 
     function startNewChat() {
+        chatPage.stopAndSaveCurrentResponse()
         root.currentSessionId = null
         chatPage.startNewChat()
         root.currentTabIndex = 0
@@ -190,6 +216,9 @@ MainView {
                 model: root.selectedModel
                 temperature: root.temperature
                 maxTokens: root.maxTokens
+                threads: root.threads
+                ctxSize: root.ctxSize
+                flashAttn: root.flashAttn
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
@@ -211,9 +240,15 @@ MainView {
                 selectedModel: root.selectedModel
                 temperature: root.temperature
                 maxTokens: root.maxTokens
+                threads: root.threads
+                ctxSize: root.ctxSize
+                flashAttn: root.flashAttn
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
+                onThreadsChanged: root.threads = threads
+                onCtxSizeChanged: root.ctxSize = ctxSize
+                onFlashAttnChanged: root.flashAttn = flashAttn
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
@@ -458,6 +493,7 @@ MainView {
                         anchors.fill: parent
                         propagateComposedEvents: true
                         onClicked: {
+                            chatPage.stopAndSaveCurrentResponse()
                             root.currentSessionId = modelData.id
                             root.currentTabIndex = 0 // Go to Chat Page
                             chatPage.loadHistory(modelData.id)

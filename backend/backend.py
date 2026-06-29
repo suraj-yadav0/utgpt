@@ -873,8 +873,33 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         prompt += f"User: {current_query}\nAssistant:"
         return prompt, "Assistant:"
 
-def run_inference(model_filename, user_message, temperature, max_tokens, token_callback=None, done_callback=None):
-    print("UTGPT_LOG: Entering run_inference with model={0}".format(model_filename), file=sys.stderr, flush=True)
+def run_inference(model_filename, user_message, temperature, max_tokens, *args):
+    # Support backward compatible dynamic signatures
+    threads = 4
+    ctx_size = 2048
+    flash_attn = "auto"
+    token_callback = None
+    done_callback = None
+
+    if len(args) == 2:
+        token_callback, done_callback = args
+    elif len(args) == 5:
+        threads, ctx_size, flash_attn, token_callback, done_callback = args
+    elif len(args) > 0:
+        if not isinstance(args[0], (str, callable)):
+            try:
+                threads = int(args[0])
+                if len(args) > 1: ctx_size = int(args[1])
+                if len(args) > 2: flash_attn = str(args[2])
+                if len(args) > 3: token_callback = args[3]
+                if len(args) > 4: done_callback = args[4]
+            except Exception:
+                pass
+        else:
+            token_callback = args[0]
+            if len(args) > 1: done_callback = args[1]
+
+    print("UTGPT_LOG: Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn), file=sys.stderr, flush=True)
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
         recent_history = user_message[-5:-1] if len(user_message) > 1 else []
@@ -916,6 +941,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
             is_completion = "llama-completion" in cli_path
             print("UTGPT_LOG: Launching inference engine: {0}".format(cli_path), file=sys.stderr, flush=True)
             
+            additional_args = [
+                "-t", str(int(threads)),
+                "-tb", str(int(threads)),
+                "-c", str(int(ctx_size)),
+                "-fa", str(flash_attn)
+            ]
+            
             if is_completion:
                 args = [
                     cli_path,
@@ -938,6 +970,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, token_c
                     "-st",
                     "--simple-io"
                 ]
+            args.extend(additional_args)
 
             process = subprocess.Popen(
                 args,
