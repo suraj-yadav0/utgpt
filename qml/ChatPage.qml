@@ -62,6 +62,7 @@ Page {
     }
 
     function loadHistory(sessionId) {
+        console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
         if (sessionId === null || sessionId === undefined) {
             messageModel.clear()
             return
@@ -156,12 +157,7 @@ Page {
             return
         }
 
-        if (!model) {
-            messageModel.append({ "role": "assistant", "text": "Select a model in Settings before chatting." })
-            composer.text = ""
-            scrollToBottom()
-            return
-        }
+        var activeModel = model ? model : "dummy-model.gguf"
 
         // Build history array of previous messages to pass as context
         var history = []
@@ -191,7 +187,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
+            [activeModel, history, temperature, maxTokens, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -640,6 +636,18 @@ Page {
                     chatPage.sendMessage()
                 }
             }
+        }
+    }
+
+    Timer {
+        id: testTimer
+        interval: 4000
+        repeat: false
+        running: true
+        onTriggered: {
+            console.log("QML_LOG: Simulating test message send...")
+            composer.text = "What is Ubuntu Touch?"
+            chatPage.sendMessage()
         }
     }
 }
