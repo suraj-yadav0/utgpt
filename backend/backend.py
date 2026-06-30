@@ -42,13 +42,31 @@ LLAMA_CLI_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-cli")
 LLAMA_COMPLETION_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-completion")
 LLAMA_COMPLETION_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-completion")
 
+def is_binary_working(path):
+    if not os.path.exists(path):
+        return False
+    try:
+        env = os.environ.copy()
+        ld_library_paths = [MODELS_DIR, os.path.join(APP_DIR, "assets")]
+        if "LD_LIBRARY_PATH" in env:
+            env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths + [env["LD_LIBRARY_PATH"]])
+        else:
+            env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
+            
+        res = subprocess.run([path, "-h"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+        if b"error while loading shared libraries" in res.stderr:
+            return False
+        return True
+    except Exception:
+        return False
+
 def get_llama_cli_path():
-    if os.path.exists(LLAMA_CLI_PATH_BUNDLED):
+    if is_binary_working(LLAMA_CLI_PATH_BUNDLED):
         return LLAMA_CLI_PATH_BUNDLED
     return LLAMA_CLI_PATH_WRITABLE
 
 def get_llama_completion_path():
-    if os.path.exists(LLAMA_COMPLETION_PATH_BUNDLED):
+    if is_binary_working(LLAMA_COMPLETION_PATH_BUNDLED):
         return LLAMA_COMPLETION_PATH_BUNDLED
     return LLAMA_COMPLETION_PATH_WRITABLE
 
@@ -510,9 +528,9 @@ LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
 
 def ensure_llama_cli():
-    cli_exists = os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE)
-    completion_exists = os.path.exists(LLAMA_COMPLETION_PATH_BUNDLED) or os.path.exists(LLAMA_COMPLETION_PATH_WRITABLE)
-    if cli_exists and completion_exists:
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
         return True
     
     system = platform.system().lower()
@@ -551,9 +569,9 @@ def ensure_llama_cli():
             os.makedirs(MODELS_DIR, exist_ok=True)
             extracted_any = False
             for member in tar.getmembers():
+                basename = os.path.basename(member.name)
+                dest_path = os.path.join(MODELS_DIR, basename)
                 if member.isfile():
-                    basename = os.path.basename(member.name)
-                    dest_path = os.path.join(MODELS_DIR, basename)
                     f = tar.extractfile(member)
                     if f:
                         with open(dest_path, "wb") as dest_file:
@@ -561,6 +579,17 @@ def ensure_llama_cli():
                         if basename in ["llama-cli", "llama-completion"] or basename.endswith(".so") or ".so." in basename:
                             os.chmod(dest_path, 0o755)
                         extracted_any = True
+                elif member.islnk() or member.issym():
+                    target_basename = os.path.basename(member.linkname)
+                    if os.path.lexists(dest_path):
+                        try:
+                            os.remove(dest_path)
+                        except OSError:
+                            pass
+                    try:
+                        os.symlink(target_basename, dest_path)
+                    except OSError:
+                        pass
             return extracted_any
     except Exception as e:
         global LLAMA_CLI_ERROR
@@ -1133,9 +1162,12 @@ def initialize():
     init_db()
     global LLAMA_CLI_READY
     
-    if os.path.exists(LLAMA_CLI_PATH_BUNDLED) or os.path.exists(LLAMA_CLI_PATH_WRITABLE):
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
         LLAMA_CLI_READY = True
     else:
+        LLAMA_CLI_READY = False
         thread = threading.Thread(target=download_llama_cli_in_background)
         thread.daemon = True
         thread.start()
