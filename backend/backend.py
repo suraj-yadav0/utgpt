@@ -972,13 +972,21 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 ]
             args.extend(additional_args)
 
+            env = os.environ.copy()
+            ld_library_paths = [MODELS_DIR, os.path.join(APP_DIR, "assets")]
+            if "LD_LIBRARY_PATH" in env:
+                env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths + [env["LD_LIBRARY_PATH"]])
+            else:
+                env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
+
             process = subprocess.Popen(
                 args,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
-                bufsize=1
+                bufsize=1,
+                env=env
             )
             _register_process(process)
             print("UTGPT_LOG: Inference engine launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
