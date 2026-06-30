@@ -407,6 +407,12 @@ def download_model_thread(name, url, progress_callback):
                     progress = min(float(bytes_written) / float(total_size), 1.0)
                     _emit_download_progress(progress_callback, name, filename, progress)
 
+        if total_size > 0 and bytes_written < total_size:
+            with DOWNLOADS_LOCK:
+                task = ACTIVE_DOWNLOADS.get(progress_callback)
+            if not (task and (task.get("paused") or task.get("canceled"))):
+                raise Exception("Connection closed prematurely ({0}/{1} bytes downloaded)".format(bytes_written, total_size))
+
         # Check exit cause
         with DOWNLOADS_LOCK:
             task = ACTIVE_DOWNLOADS.get(progress_callback)
