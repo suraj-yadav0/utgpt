@@ -456,15 +456,11 @@ Page {
                             if (model.ready) return "ok"
                             if (model.downloading) return "media-playback-pause"
                             if (model.paused) return "media-playback-start"
-                            return ""
-                        }
-                        source: {
-                            if (model.ready || model.downloading || model.paused) return ""
-                            return "../assets/Download.svg"
+                            return "next"
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#5C5C5C")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#94A3B8")
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {
