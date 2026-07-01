@@ -333,7 +333,9 @@ Page {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: units.gu(1.5)
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        anchors.topMargin: units.gu(1.5)
                         spacing: units.gu(1)
 
                         RowLayout {
@@ -348,7 +350,7 @@ Page {
 
                             Rectangle {
                                 height: units.gu(2.4)
-                                implicitWidth: compatLabel.implicitWidth + units.gu(1.6)
+                                implicitWidth: compatRow.implicitWidth + units.gu(1.6)
                                 radius: units.gu(0.4)
                                 color: {
                                     if (model.compatibility === "green") return "#e8f5e9"
@@ -363,6 +365,7 @@ Page {
                                 }
 
                                 RowLayout {
+                                    id: compatRow
                                     anchors.centerIn: parent
                                     spacing: units.gu(0.5)
 
