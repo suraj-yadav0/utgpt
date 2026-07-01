@@ -246,7 +246,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: "#f5f5f7"
+        color: "#FFFFFF"
         z: -1
     }
 
@@ -255,13 +255,15 @@ Page {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: units.gu(1.5)
+        anchors.topMargin: units.gu(1.5)
         spacing: units.gu(1.5)
 
         // Search Bar Card
         Rectangle {
             id: searchBarCard
             Layout.fillWidth: true
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
             Layout.preferredHeight: units.gu(6.5)
             color: "#FFFFFF"
             border.color: "#E2E8F0"
@@ -299,14 +301,15 @@ Page {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: units.gu(1.5)
+            spacing: 0
             model: modelsList
 
             delegate: ListItem {
                 id: modelListItem
                 width: modelsListView.width
-                height: cardLayout.implicitHeight + units.gu(3)
+                height: cardLayout.implicitHeight + units.gu(2.0)
                 highlightColor: "transparent"
+                divider.visible: true
 
                 leadingActions: model.ready ? deleteActions : null
                 trailingActions: {
@@ -370,24 +373,22 @@ Page {
                     ]
                 }
 
-                Rectangle {
-                    anchors.fill: parent
-                    color: "#FFFFFF"
-                    border.color: "#E2E8F0"
-                    radius: units.gu(1.5)
+                RowLayout {
+                    id: cardLayout
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.leftMargin: units.gu(1.5)
+                    anchors.rightMargin: units.gu(1.5)
+                    anchors.topMargin: units.gu(1.0)
+                    spacing: units.gu(1.5)
 
+                    // Text & Status Info Column
                     ColumnLayout {
-                        id: cardLayout
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.leftMargin: units.gu(2)
-                        anchors.rightMargin: units.gu(2)
-                        anchors.topMargin: units.gu(1.5)
-                        spacing: units.gu(1)
+                        Layout.fillWidth: true
+                        spacing: units.gu(0.5)
 
                         RowLayout {
-                            Layout.fillWidth: true
                             spacing: units.gu(1)
 
                             // Green blinker / status circle
@@ -406,85 +407,69 @@ Page {
                                 }
                             }
 
-                            // Downloading pulse icon
-                            Icon {
-                                name: "save"
-                                width: units.gu(1.8)
-                                height: units.gu(1.8)
-                                color: "#E95420"
-                                visible: model.downloading
-                                Layout.alignment: Qt.AlignVCenter
-
-                                SequentialAnimation on opacity {
-                                    loops: Animation.Infinite
-                                    PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
-                                    PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
-                                }
-                            }
-
-                            // Paused status icon
-                            Icon {
-                                name: "media-playback-pause"
-                                width: units.gu(1.8)
-                                height: units.gu(1.8)
-                                color: "#5C5C5C"
-                                visible: model.paused
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
                             Label {
                                 text: model.name
                                 font.bold: true
-                                Layout.fillWidth: true
                                 color: "#1E293B"
                             }
 
+                            // Green check symbol (Highly Recommended)
                             Rectangle {
-                                height: units.gu(2.4)
-                                implicitWidth: compatRow.implicitWidth + units.gu(1.6)
+                                height: units.gu(2.0)
+                                width: height
                                 radius: units.gu(0.4)
-                                color: {
-                                    if (model.compatibility === "green") return "#e8f5e9"
-                                    if (model.compatibility === "yellow") return "#fffde7"
-                                    return "#ffebee"
-                                }
+                                color: "#e8f5e9"
                                 border.width: 1
-                                border.color: {
-                                    if (model.compatibility === "green") return "#81c784"
-                                    if (model.compatibility === "yellow") return "#fff176"
-                                    return "#e57373"
-                                }
+                                border.color: "#81c784"
+                                visible: model.compatibility === "green"
+                                Layout.alignment: Qt.AlignVCenter
 
-                                RowLayout {
-                                    id: compatRow
+                                Icon {
                                     anchors.centerIn: parent
-                                    spacing: units.gu(0.5)
+                                    name: "ok"
+                                    width: units.gu(1.2)
+                                    height: units.gu(1.2)
+                                    color: "#2e7d32"
+                                }
+                            }
 
-                                    Icon {
-                                        name: {
-                                            if (model.compatibility === "green") return "ok"
-                                            if (model.compatibility === "yellow") return "info"
-                                            return "warning"
-                                        }
-                                        width: units.gu(1.4)
-                                        height: units.gu(1.4)
-                                        color: {
-                                            if (model.compatibility === "green") return "#2e7d32"
-                                            if (model.compatibility === "yellow") return "#f57f17"
-                                            return "#c62828"
-                                        }
-                                    }
+                            // Yellow compatibility badge
+                            Rectangle {
+                                height: units.gu(2.0)
+                                width: height
+                                radius: units.gu(0.4)
+                                color: "#fffde7"
+                                border.width: 1
+                                border.color: "#fff176"
+                                visible: model.compatibility === "yellow"
+                                Layout.alignment: Qt.AlignVCenter
 
-                                    Label {
-                                        id: compatLabel
-                                        text: model.compatibilityText
-                                        fontSize: "small"
-                                        color: {
-                                            if (model.compatibility === "green") return "#2e7d32"
-                                            if (model.compatibility === "yellow") return "#f57f17"
-                                            return "#c62828"
-                                        }
-                                    }
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: "info"
+                                    width: units.gu(1.2)
+                                    height: units.gu(1.2)
+                                    color: "#f57f17"
+                                }
+                            }
+
+                            // Red compatibility warning badge
+                            Rectangle {
+                                height: units.gu(2.0)
+                                width: height
+                                radius: units.gu(0.4)
+                                color: "#ffebee"
+                                border.width: 1
+                                border.color: "#e57373"
+                                visible: model.compatibility === "red"
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: "dialog-warning"
+                                    width: units.gu(1.2)
+                                    height: units.gu(1.2)
+                                    color: "#c62828"
                                 }
                             }
                         }
@@ -519,8 +504,27 @@ Page {
                             color: "#475569"
                             fontSize: "small"
                         }
+                    }
 
+                    // Trailing Action/State Indicator Icon
+                    Icon {
+                        name: {
+                            if (model.ready) return "ok"
+                            if (model.downloading) return "media-playback-pause"
+                            if (model.paused) return "media-playback-start"
+                            return "save"
+                        }
+                        width: units.gu(2.2)
+                        height: units.gu(2.2)
+                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#94A3B8")
+                        Layout.alignment: Qt.AlignVCenter
 
+                        SequentialAnimation on opacity {
+                            running: model.downloading
+                            loops: Animation.Infinite
+                            PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
+                            PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                        }
                     }
                 }
             }
