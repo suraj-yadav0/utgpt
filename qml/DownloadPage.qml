@@ -307,7 +307,7 @@ Page {
             delegate: ListItem {
                 id: modelListItem
                 width: modelsListView.width
-                height: cardLayout.implicitHeight + units.gu(2.0)
+                height: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
                 divider.visible: true
 
@@ -334,7 +334,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconName: "save"
+                            iconSource: "../assets/Download.svg"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
@@ -380,7 +380,7 @@ Page {
                     anchors.top: parent.top
                     anchors.leftMargin: units.gu(1.5)
                     anchors.rightMargin: units.gu(1.5)
-                    anchors.topMargin: units.gu(1.0)
+                    anchors.topMargin: units.gu(2.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
@@ -512,11 +512,15 @@ Page {
                             if (model.ready) return "ok"
                             if (model.downloading) return "media-playback-pause"
                             if (model.paused) return "media-playback-start"
-                            return "save"
+                            return ""
+                        }
+                        source: {
+                            if (model.ready || model.downloading || model.paused) return ""
+                            return "../assets/Download.svg"
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#94A3B8")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#5C5C5C")
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {
@@ -524,6 +528,21 @@ Page {
                             loops: Animation.Infinite
                             PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
                             PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (model.ready) {
+                                    // Already ready
+                                } else if (model.downloading) {
+                                    downloadPage.pauseDownload(index)
+                                } else if (model.paused) {
+                                    downloadPage.resumeDownload(index)
+                                } else {
+                                    downloadPage.startDownload(index)
+                                }
+                            }
                         }
                     }
                 }
