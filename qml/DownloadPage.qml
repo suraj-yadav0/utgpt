@@ -391,13 +391,17 @@ Page {
                         RowLayout {
                             spacing: units.gu(1)
 
-                            // Green blinker / status circle
+                            // Compatibility Blinker / status circle
                             Rectangle {
                                 width: units.gu(1.2)
                                 height: units.gu(1.2)
                                 radius: width / 2
-                                color: "#2ECC71"
-                                visible: model.ready
+                                color: {
+                                    if (model.compatibility === "green") return "#2ECC71"
+                                    if (model.compatibility === "yellow") return "#F1C40F"
+                                    return "#E74C3C"
+                                }
+                                visible: true
                                 Layout.alignment: Qt.AlignVCenter
 
                                 SequentialAnimation on opacity {
@@ -411,66 +415,6 @@ Page {
                                 text: model.name
                                 font.bold: true
                                 color: "#1E293B"
-                            }
-
-                            // Green check symbol (Highly Recommended)
-                            Rectangle {
-                                height: units.gu(2.0)
-                                width: height
-                                radius: units.gu(0.4)
-                                color: "#e8f5e9"
-                                border.width: 1
-                                border.color: "#81c784"
-                                visible: model.compatibility === "green"
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Icon {
-                                    anchors.centerIn: parent
-                                    name: "ok"
-                                    width: units.gu(1.2)
-                                    height: units.gu(1.2)
-                                    color: "#2e7d32"
-                                }
-                            }
-
-                            // Yellow compatibility badge
-                            Rectangle {
-                                height: units.gu(2.0)
-                                width: height
-                                radius: units.gu(0.4)
-                                color: "#fffde7"
-                                border.width: 1
-                                border.color: "#fff176"
-                                visible: model.compatibility === "yellow"
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Icon {
-                                    anchors.centerIn: parent
-                                    name: "info"
-                                    width: units.gu(1.2)
-                                    height: units.gu(1.2)
-                                    color: "#f57f17"
-                                }
-                            }
-
-                            // Red compatibility warning badge
-                            Rectangle {
-                                height: units.gu(2.0)
-                                width: height
-                                radius: units.gu(0.4)
-                                color: "#ffebee"
-                                border.width: 1
-                                border.color: "#e57373"
-                                visible: model.compatibility === "red"
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Icon {
-                                    anchors.centerIn: parent
-                                    name: "dialog-warning"
-                                    width: units.gu(1.2)
-                                    height: units.gu(1.2)
-                                    color: "#c62828"
-                                }
                             }
                         }
 
