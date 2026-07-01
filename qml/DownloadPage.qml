@@ -250,70 +250,131 @@ Page {
         z: -1
     }
 
-    Flickable {
+    ColumnLayout {
         anchors.top: downloadHeader.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        contentWidth: width
-        contentHeight: cardsColumn.height + units.gu(4)
-        clip: true
+        anchors.margins: units.gu(1.5)
+        spacing: units.gu(1.5)
 
-        Column {
-            id: cardsColumn
-            width: parent.width - (units.gu(4))
-            anchors {
-                left: parent.left
-                right: parent.right
-                top: parent.top
-                margins: units.gu(2)
-            }
-            spacing: units.gu(2)
+        // Search Bar Card
+        Rectangle {
+            id: searchBarCard
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(6.5)
+            color: "#FFFFFF"
+            border.color: "#E2E8F0"
+            border.width: 1
+            radius: units.gu(1.5)
 
-            // Search Bar Card
-            Rectangle {
-                width: parent.width
-                height: units.gu(6.5)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
-                border.width: 1
-                radius: units.gu(1.5)
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(1.5)
+                anchors.rightMargin: units.gu(1.5)
+                spacing: units.gu(1.5)
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: units.gu(1.5)
-                    anchors.rightMargin: units.gu(1.5)
-                    spacing: units.gu(1.5)
+                Icon {
+                    name: "search"
+                    width: units.gu(2.2)
+                    height: units.gu(2.2)
+                    color: "#94A3B8"
+                }
 
-                    Icon {
-                        name: "search"
-                        width: units.gu(2.2)
-                        height: units.gu(2.2)
-                        color: "#94A3B8"
-                    }
-
-                    TextField {
-                        id: searchInput
-                        Layout.fillWidth: true
-                        placeholderText: i18n.tr("Search models...")
-                        hasClearButton: true
-                        
-                        onTextChanged: {
-                            downloadPage.populateModelsFromCatalog()
-                        }
+                TextField {
+                    id: searchInput
+                    Layout.fillWidth: true
+                    placeholderText: i18n.tr("Search models...")
+                    hasClearButton: true
+                    
+                    onTextChanged: {
+                        downloadPage.populateModelsFromCatalog()
                     }
                 }
             }
+        }
 
-            Repeater {
-                model: modelsList
+        ListView {
+            id: modelsListView
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            spacing: units.gu(1.5)
+            model: modelsList
 
-                delegate: Rectangle {
-                    width: cardsColumn.width
+            delegate: ListItem {
+                id: modelListItem
+                width: modelsListView.width
+                height: cardLayout.implicitHeight + units.gu(3)
+                highlightColor: "transparent"
+
+                leadingActions: model.ready ? deleteActions : null
+                trailingActions: {
+                    if (model.ready) return null;
+                    if (model.downloading) return downloadingActions;
+                    if (model.paused) return pausedActions;
+                    return downloadActions;
+                }
+
+                ListItemActions {
+                    id: deleteActions
+                    actions: [
+                        Action {
+                            iconName: "delete"
+                            text: i18n.tr("Delete")
+                            onTriggered: downloadPage.deleteModel(index)
+                        }
+                    ]
+                }
+
+                ListItemActions {
+                    id: downloadActions
+                    actions: [
+                        Action {
+                            iconName: "down"
+                            text: i18n.tr("Download")
+                            onTriggered: downloadPage.startDownload(index)
+                        }
+                    ]
+                }
+
+                ListItemActions {
+                    id: downloadingActions
+                    actions: [
+                        Action {
+                            iconName: "media-playback-pause"
+                            text: i18n.tr("Pause")
+                            onTriggered: downloadPage.pauseDownload(index)
+                        },
+                        Action {
+                            iconName: "cancel"
+                            text: i18n.tr("Cancel")
+                            onTriggered: downloadPage.cancelDownload(index)
+                        }
+                    ]
+                }
+
+                ListItemActions {
+                    id: pausedActions
+                    actions: [
+                        Action {
+                            iconName: "media-playback-start"
+                            text: i18n.tr("Resume")
+                            onTriggered: downloadPage.resumeDownload(index)
+                        },
+                        Action {
+                            iconName: "cancel"
+                            text: i18n.tr("Cancel")
+                            onTriggered: downloadPage.cancelDownload(index)
+                        }
+                    ]
+                }
+
+                Rectangle {
+                    anchors.fill: parent
                     color: "#FFFFFF"
                     border.color: "#E2E8F0"
                     radius: units.gu(1.5)
-                    implicitHeight: cardLayout.implicitHeight + units.gu(3)
 
                     ColumnLayout {
                         id: cardLayout
@@ -329,10 +390,53 @@ Page {
                             Layout.fillWidth: true
                             spacing: units.gu(1)
 
+                            // Green blinker / status circle
+                            Rectangle {
+                                width: units.gu(1.2)
+                                height: units.gu(1.2)
+                                radius: width / 2
+                                color: "#2ECC71"
+                                visible: model.ready
+                                Layout.alignment: Qt.AlignVCenter
+
+                                SequentialAnimation on opacity {
+                                    loops: Animation.Infinite
+                                    PropertyAnimation { to: 0.3; duration: 1000; easing.type: Easing.InOutQuad }
+                                    PropertyAnimation { to: 1.0; duration: 1000; easing.type: Easing.InOutQuad }
+                                }
+                            }
+
+                            // Downloading pulse icon
+                            Icon {
+                                name: "down"
+                                width: units.gu(1.8)
+                                height: units.gu(1.8)
+                                color: "#E95420"
+                                visible: model.downloading
+                                Layout.alignment: Qt.AlignVCenter
+
+                                SequentialAnimation on opacity {
+                                    loops: Animation.Infinite
+                                    PropertyAnimation { to: 0.4; duration: 800; easing.type: Easing.InOutQuad }
+                                    PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                                }
+                            }
+
+                            // Paused status icon
+                            Icon {
+                                name: "media-playback-pause"
+                                width: units.gu(1.8)
+                                height: units.gu(1.8)
+                                color: "#5C5C5C"
+                                visible: model.paused
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
                             Label {
                                 text: model.name
                                 font.bold: true
                                 Layout.fillWidth: true
+                                color: "#1E293B"
                             }
 
                             Rectangle {
@@ -388,8 +492,9 @@ Page {
                         Label {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
-                            text: model.name + "  - " + model.size + " - " + model.description
-                            color: "#5c5c5c"
+                            text: model.size + " - " + model.description
+                            color: "#64748B"
+                            fontSize: "small"
                         }
 
                         ProgressBar {
@@ -411,66 +516,52 @@ Page {
                                 return i18n.tr("Downloading: ") + Math.round(model.progress * 100) + "%"
                             }
                             visible: model.downloading || model.paused
-                            color: "#5c5c5c"
+                            color: "#475569"
                             fontSize: "small"
                         }
 
+                        // Compact inline action buttons
                         RowLayout {
+                            Layout.fillWidth: true
                             spacing: units.gu(1)
-                            visible: model.ready
 
-                            RowLayout {
-                                spacing: units.gu(0.5)
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Icon {
-                                    name: "ok"
-                                    width: units.gu(1.8)
-                                    height: units.gu(1.8)
-                                    color: "#2e7d32"
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                Label {
-                                    text: i18n.tr("Ready")
-                                    color: "#2e7d32"
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
+                            // Show Delete button if downloaded
                             Button {
                                 text: i18n.tr("Delete")
                                 color: "#C7162B"
+                                visible: model.ready
                                 onClicked: downloadPage.deleteModel(index)
                             }
-                        }
 
-                        RowLayout {
-                            spacing: units.gu(1)
-                            visible: model.downloading || model.paused
+                            // Show pause/resume/cancel if active
+                            RowLayout {
+                                spacing: units.gu(1)
+                                visible: model.downloading || model.paused
 
-                            Button {
-                                text: model.paused ? i18n.tr("Resume") : i18n.tr("Pause")
-                                onClicked: {
-                                    if (model.paused) {
-                                        downloadPage.resumeDownload(index)
-                                    } else {
-                                        downloadPage.pauseDownload(index)
+                                Button {
+                                    text: model.paused ? i18n.tr("Resume") : i18n.tr("Pause")
+                                    onClicked: {
+                                        if (model.paused) {
+                                            downloadPage.resumeDownload(index)
+                                        } else {
+                                            downloadPage.pauseDownload(index)
+                                        }
                                     }
+                                }
+
+                                Button {
+                                    text: i18n.tr("Cancel")
+                                    color: "#C7162B"
+                                    onClicked: downloadPage.cancelDownload(index)
                                 }
                             }
 
+                            // Show download button if not started
                             Button {
-                                text: i18n.tr("Cancel")
-                                color: "#C7162B"
-                                onClicked: downloadPage.cancelDownload(index)
+                                text: i18n.tr("Download")
+                                visible: !model.downloading && !model.ready && !model.paused
+                                onClicked: downloadPage.startDownload(index)
                             }
-                        }
-
-                        Button {
-                            text: i18n.tr("Download")
-                            visible: !model.downloading && !model.ready && !model.paused
-                            onClicked: downloadPage.startDownload(index)
                         }
                     }
                 }
