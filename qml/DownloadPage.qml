@@ -331,7 +331,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconName: "down"
+                            iconName: "save"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
@@ -408,7 +408,7 @@ Page {
 
                             // Downloading pulse icon
                             Icon {
-                                name: "down"
+                                name: "save"
                                 width: units.gu(1.8)
                                 height: units.gu(1.8)
                                 color: "#E95420"
