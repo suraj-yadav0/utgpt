@@ -26,24 +26,11 @@ Page {
                 onTriggered: settingsPage.toggleSidebar()
             }
         ]
-        trailingActionBar.numberOfSlots: 3
-        trailingActionBar.actions: [
-            Action {
-                iconName: "message"
-                text: i18n.tr("Chat")
-                onTriggered: root.currentTabIndex = 0
-            },
-            Action {
-                iconName: "package-x-generic-symbolic"
-                text: i18n.tr("Models")
-                onTriggered: root.currentTabIndex = 1
-            },
-            Action {
-                iconName: "settings"
-                text: i18n.tr("Settings")
-                onTriggered: root.currentTabIndex = 2
-            }
-        ]
+        NavigationRow {
+            anchors.right: parent.right
+            anchors.rightMargin: units.gu(1.5)
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
 
     property var python
