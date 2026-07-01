@@ -406,8 +406,8 @@ Page {
 
                                 SequentialAnimation on opacity {
                                     loops: Animation.Infinite
-                                    PropertyAnimation { to: 0.3; duration: 1000; easing.type: Easing.InOutQuad }
-                                    PropertyAnimation { to: 1.0; duration: 1000; easing.type: Easing.InOutQuad }
+                                    PropertyAnimation { to: 0.3; duration: 2000; easing.type: Easing.InOutQuad }
+                                    PropertyAnimation { to: 1.0; duration: 2000; easing.type: Easing.InOutQuad }
                                 }
                             }
 
