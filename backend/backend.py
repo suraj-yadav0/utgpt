@@ -199,8 +199,54 @@ DEFAULT_CATALOG = [
 
 import json
 
+def get_total_ram_gb():
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    mem_kb = int(line.split()[1])
+                    return mem_kb / (1024.0 * 1024.0)
+    except Exception:
+        pass
+    return 4.0
+
+def get_model_compatibility(size_str, ram_gb):
+    try:
+        size_str = size_str.lower().replace("~", "").strip()
+        if "gb" in size_str:
+            size_gb = float(size_str.split("gb")[0].strip())
+        elif "mb" in size_str:
+            size_gb = float(size_str.split("mb")[0].strip()) / 1024.0
+        else:
+            size_gb = 1.5
+    except Exception:
+        size_gb = 1.5
+
+    if ram_gb <= 3.1:
+        if size_gb <= 0.6:
+            return "green"
+        elif size_gb <= 1.2:
+            return "yellow"
+        else:
+            return "red"
+    elif ram_gb <= 4.2:
+        if size_gb <= 1.1:
+            return "green"
+        elif size_gb <= 1.8:
+            return "yellow"
+        else:
+            return "red"
+    else:
+        if size_gb <= 1.8:
+            return "green"
+        elif size_gb <= 2.5:
+            return "yellow"
+        else:
+            return "red"
+
 def fetch_model_catalog():
     url = "https://raw.githubusercontent.com/surajyadav0/utgpt/main/assets/models.json"
+    ram_gb = get_total_ram_gb()
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=10) as response:
@@ -208,10 +254,35 @@ def fetch_model_catalog():
             if isinstance(data, list) and len(data) > 0:
                 required_keys = {"name", "filename", "url"}
                 if all(required_keys.issubset(item.keys()) for item in data):
+                    for item in data:
+                        size_str = item.get("size", "1.5 GB")
+                        compat = get_model_compatibility(size_str, ram_gb)
+                        item["compatibility"] = compat
+                        if compat == "green":
+                            item["compatibilityText"] = "Highly Recommended"
+                        elif compat == "yellow":
+                            item["compatibilityText"] = "Runs Fine"
+                        else:
+                            item["compatibilityText"] = "Heavy (May lag/crash)"
                     return data
     except Exception as e:
         print("UTGPT_LOG: Failed to fetch remote model catalog, using fallback: " + str(e), file=sys.stderr, flush=True)
-    return DEFAULT_CATALOG
+    
+    # Process fallbacks
+    data = []
+    for item in DEFAULT_CATALOG:
+        item_copy = item.copy()
+        size_str = item_copy.get("size", "1.5 GB")
+        compat = get_model_compatibility(size_str, ram_gb)
+        item_copy["compatibility"] = compat
+        if compat == "green":
+            item_copy["compatibilityText"] = "Highly Recommended"
+        elif compat == "yellow":
+            item_copy["compatibilityText"] = "Runs Fine"
+        else:
+            item_copy["compatibilityText"] = "Heavy (May lag/crash)"
+        data.append(item_copy)
+    return data
 
 
 def _ensure_models_dir():

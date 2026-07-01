@@ -230,7 +230,9 @@ Page {
                 downloading: false,
                 paused: false,
                 ready: false,
-                requestId: ""
+                requestId: "",
+                compatibility: item.compatibility || "yellow",
+                compatibilityText: item.compatibilityText || i18n.tr("Runs Fine")
             });
         }
         refreshDownloadedModels();
@@ -328,14 +330,69 @@ Page {
 
                     ColumnLayout {
                         id: cardLayout
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         anchors.margins: units.gu(1.5)
                         spacing: units.gu(1)
 
-                        Label {
-                            text: model.name
-                            font.bold: true
+                        RowLayout {
                             Layout.fillWidth: true
+                            spacing: units.gu(1)
+
+                            Label {
+                                text: model.name
+                                font.bold: true
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                height: units.gu(2.4)
+                                implicitWidth: compatLabel.implicitWidth + units.gu(1.6)
+                                radius: units.gu(0.4)
+                                color: {
+                                    if (model.compatibility === "green") return "#e8f5e9"
+                                    if (model.compatibility === "yellow") return "#fffde7"
+                                    return "#ffebee"
+                                }
+                                border.width: 1
+                                border.color: {
+                                    if (model.compatibility === "green") return "#81c784"
+                                    if (model.compatibility === "yellow") return "#fff176"
+                                    return "#e57373"
+                                }
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: units.gu(0.5)
+
+                                    Icon {
+                                        name: {
+                                            if (model.compatibility === "green") return "ok"
+                                            if (model.compatibility === "yellow") return "info"
+                                            return "warning"
+                                        }
+                                        width: units.gu(1.4)
+                                        height: units.gu(1.4)
+                                        color: {
+                                            if (model.compatibility === "green") return "#2e7d32"
+                                            if (model.compatibility === "yellow") return "#f57f17"
+                                            return "#c62828"
+                                        }
+                                    }
+
+                                    Label {
+                                        id: compatLabel
+                                        text: model.compatibilityText
+                                        fontSize: "small"
+                                        color: {
+                                            if (model.compatibility === "green") return "#2e7d32"
+                                            if (model.compatibility === "yellow") return "#f57f17"
+                                            return "#c62828"
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         Label {
