@@ -520,49 +520,7 @@ Page {
                             fontSize: "small"
                         }
 
-                        // Compact inline action buttons
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: units.gu(1)
 
-                            // Show Delete button if downloaded
-                            Button {
-                                text: i18n.tr("Delete")
-                                color: "#C7162B"
-                                visible: model.ready
-                                onClicked: downloadPage.deleteModel(index)
-                            }
-
-                            // Show pause/resume/cancel if active
-                            RowLayout {
-                                spacing: units.gu(1)
-                                visible: model.downloading || model.paused
-
-                                Button {
-                                    text: model.paused ? i18n.tr("Resume") : i18n.tr("Pause")
-                                    onClicked: {
-                                        if (model.paused) {
-                                            downloadPage.resumeDownload(index)
-                                        } else {
-                                            downloadPage.pauseDownload(index)
-                                        }
-                                    }
-                                }
-
-                                Button {
-                                    text: i18n.tr("Cancel")
-                                    color: "#C7162B"
-                                    onClicked: downloadPage.cancelDownload(index)
-                                }
-                            }
-
-                            // Show download button if not started
-                            Button {
-                                text: i18n.tr("Download")
-                                visible: !model.downloading && !model.ready && !model.paused
-                                onClicked: downloadPage.startDownload(index)
-                            }
-                        }
                     }
                 }
             }
