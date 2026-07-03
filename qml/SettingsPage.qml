@@ -17,6 +17,10 @@ Page {
     header: PageHeader {
         id: settingsHeader
         title: i18n.tr("Settings")
+        StyleHints {
+            backgroundColor: root.themeColor
+            foregroundColor: "white"
+        }
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {

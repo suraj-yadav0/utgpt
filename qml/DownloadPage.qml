@@ -16,6 +16,10 @@ Page {
     header: PageHeader {
         id: downloadHeader
         title: i18n.tr("Download Models")
+        StyleHints {
+            backgroundColor: root.themeColor
+            foregroundColor: "white"
+        }
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {

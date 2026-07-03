@@ -16,7 +16,11 @@ Page {
 
     header: PageHeader {
         id: chatHeader
-        title: i18n.tr("UTGPT")
+        title: i18n.tr("Chat")
+        StyleHints {
+            backgroundColor: root.themeColor
+            foregroundColor: "white"
+        }
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
