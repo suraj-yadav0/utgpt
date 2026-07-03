@@ -144,7 +144,9 @@ Page {
         target: python
 
         function onReceived(result) {
-            console.log("QML_LOG: DownloadPage received result type:", typeof result, "JSON:", JSON.stringify(result))
+            if (root.debugMode) {
+                console.log("QML_LOG: DownloadPage received result type:", typeof result, "JSON:", JSON.stringify(result))
+            }
             
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null

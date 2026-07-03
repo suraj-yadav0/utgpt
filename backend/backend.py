@@ -17,6 +17,18 @@ import time
 import sys
 import sqlite3
 
+DEBUG_MODE = os.environ.get("UTGPT_DEBUG", "").lower() in ("1", "true", "yes")
+
+def log_debug(msg):
+    if DEBUG_MODE:
+        print("UTGPT_LOG [DEBUG]: {0}".format(msg), file=sys.stderr, flush=True)
+
+def log_info(msg):
+    print("UTGPT_LOG [INFO]: {0}".format(msg), file=sys.stderr, flush=True)
+
+def log_error(msg):
+    print("UTGPT_LOG [ERROR]: {0}".format(msg), file=sys.stderr, flush=True)
+
 def _urlopen(req, timeout=60):
     try:
         import ssl
@@ -276,7 +288,7 @@ def fetch_model_catalog():
                             item["compatibilityText"] = "Heavy (May lag/crash)"
                     return data
     except Exception as e:
-        print("UTGPT_LOG: Failed to fetch remote model catalog, using fallback: " + str(e), file=sys.stderr, flush=True)
+        log_error("Failed to fetch remote model catalog, using fallback: " + str(e))
     
     # Process fallbacks
     data = []
@@ -1099,7 +1111,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             token_callback = args[0]
             if len(args) > 1: done_callback = args[1]
 
-    print("UTGPT_LOG: Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn), file=sys.stderr, flush=True)
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn))
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
         recent_history = user_message[-5:-1] if len(user_message) > 1 else []
@@ -1112,16 +1124,16 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         current_query = str(user_message)
         context_msgs = retrieve_relevant_context(current_query, {current_query}, limit=3)
         prompt, boundary = get_prompt_and_boundary(model_filename, current_query, [], context_msgs)
-    print("UTGPT_LOG: Constructed prompt: {0}".format(repr(prompt)), file=sys.stderr, flush=True)
+    log_debug("Constructed prompt: {0}".format(repr(prompt)))
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
-        print("UTGPT_LOG: Error - No model selected", file=sys.stderr, flush=True)
+        log_error("No model selected")
         _emit_done(done_callback, ok=False, error_message="No model selected.")
         return False
 
     if not os.path.exists(model_path):
-        print("UTGPT_LOG: Error - Model file not found at {0}".format(model_path), file=sys.stderr, flush=True)
+        log_error("Model file not found at {0}".format(model_path))
         _emit_done(done_callback, ok=False, error_message="Model file not found: {0}".format(model_filename))
         return False
 
@@ -1131,7 +1143,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
         else:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
-        print("UTGPT_LOG: Error - inference engine not found: {0}".format(error_msg), file=sys.stderr, flush=True)
+        log_error("inference engine not found: {0}".format(error_msg))
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
@@ -1139,7 +1151,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         process = None
         try:
             is_completion = "llama-completion" in cli_path
-            print("UTGPT_LOG: Launching inference engine: {0}".format(cli_path), file=sys.stderr, flush=True)
+            log_info("Launching inference engine: {0}".format(cli_path))
 
             # Determine template type to pass correct reverse prompts/stop tokens
             metadata = get_model_metadata(model_filename)
@@ -1221,7 +1233,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 env=env
             )
             _register_process(process)
-            print("UTGPT_LOG: Inference engine launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
+            log_info("Inference engine launched successfully, starting stdout read loop")
 
             stderr_lines = []
             def log_stderr():
@@ -1243,7 +1255,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 has_emitted_content = True
 
             if is_completion:
-                print("UTGPT_LOG: Using simplified completion stdout read loop", file=sys.stderr, flush=True)
+                log_debug("Using simplified completion stdout read loop")
                 while True:
                     char = process.stdout.read(1)
                     if not char:
@@ -1267,10 +1279,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     # Clean up llama-completion's end-of-text markers
                     output_buffer = output_buffer.replace(" [end of text]", "").replace("[end of text]", "")
                     if output_buffer:
-                        print("UTGPT_LOG: Emitting remaining completion buffer: {0}".format(repr(output_buffer)), file=sys.stderr, flush=True)
+                        log_debug("Emitting remaining completion buffer: {0}".format(repr(output_buffer)))
                         _emit_token(token_callback, output_buffer)
             else:
-                print("UTGPT_LOG: Using legacy cli boundary detection stdout read loop", file=sys.stderr, flush=True)
+                log_debug("Using legacy cli boundary detection stdout read loop")
                 started = False
                 checked_banner = False
                 
@@ -1284,21 +1296,21 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     if not checked_banner:
                         if len(output_buffer) >= 15:
                             if "Loading model" in output_buffer:
-                                print("UTGPT_LOG: Detected interactive banner, waiting for boundary", file=sys.stderr, flush=True)
+                                log_debug("Detected interactive banner, waiting for boundary")
                             else:
-                                print("UTGPT_LOG: No interactive banner detected, starting stream immediately", file=sys.stderr, flush=True)
+                                log_debug("No interactive banner detected, starting stream immediately")
                                 started = True
                             checked_banner = True
                     
                     if not started:
                         if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
-                            print("UTGPT_LOG: Detected boundary, starting token stream", file=sys.stderr, flush=True)
+                            log_debug("Detected boundary, starting token stream")
                             output_buffer = ""
                             started = True
                         continue
                         
                     if "[ Prompt:" in output_buffer:
-                        print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
+                        log_debug("Detected '[ Prompt:' footer boundary")
                         break
                         
                     if len(output_buffer) > 20:
@@ -1319,13 +1331,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     if not has_emitted_content:
                         remaining = remaining.lstrip()
                     if remaining:
-                        print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
+                        log_debug("Emitting remaining buffer content: {0}".format(repr(remaining)))
                         _emit_token(token_callback, remaining)
 
-            print("UTGPT_LOG: Waiting for process to exit", file=sys.stderr, flush=True)
+            log_debug("Waiting for process to exit")
             exit_code = process.wait()
             stderr_thread.join(timeout=1.0)
-            print("UTGPT_LOG: Process exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
+            log_info("Process exited with code {0}".format(exit_code))
             if exit_code != 0:
                 error_msg = "".join(stderr_lines).strip()
                 if not error_msg:
@@ -1335,7 +1347,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             _emit_done(done_callback, ok=True, error_message="")
         except Exception as error:  # pragma: no cover - exercised from app runtime
-            print("UTGPT_LOG: Exception in run_inference: {0}".format(error), file=sys.stderr, flush=True)
+            log_error("Exception in run_inference: {0}".format(error))
             _terminate_process(process)
             _emit_done(done_callback, ok=False, error_message=str(error))
         finally:
@@ -1382,6 +1394,7 @@ def initialize():
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
-        "llamaCliPath": get_llama_cli_path()
+        "llamaCliPath": get_llama_cli_path(),
+        "debug": DEBUG_MODE
     }
 

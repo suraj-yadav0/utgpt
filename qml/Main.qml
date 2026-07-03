@@ -34,6 +34,7 @@ MainView {
     }
 
     property bool backendReady: false
+    property bool debugMode: false
     property string backendError: ""
     property int currentTabIndex: 0
     property string selectedModel: appSettings.selectedModel
@@ -156,7 +157,10 @@ MainView {
         Component.onCompleted: {
             addImportPath(Qt.resolvedUrl("../backend"))
             importModule("backend", function() {
-                python.call("backend.initialize", [], function() {
+                python.call("backend.initialize", [], function(result) {
+                    if (result) {
+                        root.debugMode = !!result.debug
+                    }
                     root.backendReady = true
                 })
             })

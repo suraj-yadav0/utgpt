@@ -48,7 +48,9 @@ Page {
 
 
     function loadHistory(sessionId) {
-        console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
+        if (root.debugMode) {
+            console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
+        }
         if (sessionId === null || sessionId === undefined) {
             messageModel.clear()
             return
@@ -72,7 +74,9 @@ Page {
 
     function stopAndSaveCurrentResponse() {
         if (!isResponding) return;
-        console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        if (root.debugMode) {
+            console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        }
         python.call("backend.stop_all_inference", [])
         if (messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
@@ -229,7 +233,9 @@ Page {
         target: python
 
         function onReceived(result) {
-            console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
+            if (root.debugMode) {
+                console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
+            }
             
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null
@@ -238,7 +244,9 @@ Page {
             }
 
             if (data.payload.requestId !== pendingRequestId) {
-                console.log("QML_LOG: Request ID mismatch: " + data.payload.requestId + " != " + pendingRequestId)
+                if (root.debugMode) {
+                    console.log("QML_LOG: Request ID mismatch: " + data.payload.requestId + " != " + pendingRequestId)
+                }
                 return
             }
 
