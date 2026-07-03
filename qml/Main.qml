@@ -423,12 +423,34 @@ MainView {
                 model: root.chatSessions
                 spacing: 0
 
-                delegate: Rectangle {
+                delegate: ListItem {
+                    id: sessionListItem
                     width: sessionsListView.width
                     height: units.gu(6.5)
-                    color: root.currentSessionId === modelData.id ? "#FFF5F0" : "#FFFFFF"
+                    color: root.currentSessionId === modelData.id ? root.themeBgLight : "#FFFFFF"
+                    highlightColor: root.themeBgLight
 
-                    // Orange indicator pill on the left
+                    leadingActions: ListItemActions {
+                        actions: [
+                            Action {
+                                iconName: "delete"
+                                text: i18n.tr("Delete")
+                                onTriggered: root.deleteSession(modelData.id)
+                            }
+                        ]
+                    }
+
+                    onClicked: {
+                        chatPage.stopAndSaveCurrentResponse()
+                        root.currentSessionId = modelData.id
+                        root.currentTabIndex = 0 // Go to Chat Page
+                        chatPage.loadHistory(modelData.id)
+                        if (root.width < units.gu(60)) {
+                            root.sidebarOpen = false
+                        }
+                    }
+
+                    // Theme color indicator pill on the left
                     Rectangle {
                         anchors.left: parent.left
                         anchors.top: parent.top
@@ -436,6 +458,7 @@ MainView {
                         width: units.gu(0.4)
                         color: root.themeColor
                         visible: root.currentSessionId === modelData.id
+                        z: 2
                     }
 
                     RowLayout {
@@ -462,33 +485,6 @@ MainView {
                             elide: Text.ElideRight
                             Layout.alignment: Qt.AlignVCenter
                         }
-
-                        // Trash button to delete session
-                        Rectangle {
-                            width: units.gu(3.5)
-                            height: units.gu(3.5)
-                            radius: units.gu(0.5)
-                            color: "transparent"
-                            Layout.alignment: Qt.AlignVCenter
-
-                            Icon {
-                                anchors.centerIn: parent
-                                name: "delete"
-                                width: units.gu(1.8)
-                                height: units.gu(1.8)
-                                color: "#94A3B8"
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onEntered: parent.color = "#FEE2E2"
-                                onExited: parent.color = "transparent"
-                                onClicked: {
-                                    root.deleteSession(modelData.id)
-                                }
-                            }
-                        }
                     }
 
                     // Bottom separator line
@@ -500,20 +496,6 @@ MainView {
                         anchors.rightMargin: units.gu(1.5)
                         height: 1
                         color: "#E2E8F0"
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        propagateComposedEvents: true
-                        onClicked: {
-                            chatPage.stopAndSaveCurrentResponse()
-                            root.currentSessionId = modelData.id
-                            root.currentTabIndex = 0 // Go to Chat Page
-                            chatPage.loadHistory(modelData.id)
-                            if (root.width < units.gu(60)) {
-                                root.sidebarOpen = false
-                            }
-                        }
                     }
                 }
             }
