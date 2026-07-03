@@ -751,25 +751,54 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            Button {
-                id: q1
+            GridLayout {
                 width: parent.width
-                text: i18n.tr("What is Ubuntu Touch?")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = q1.text
-                    chatPage.sendMessage()
-                }
-            }
+                columns: 2
+                rowSpacing: units.gu(1)
+                columnSpacing: units.gu(1)
 
-            Button {
-                id: q2
-                width: parent.width
-                text: i18n.tr("Explain QML in simple terms")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = q2.text
-                    chatPage.sendMessage()
+                Button {
+                    id: q1
+                    Layout.fillWidth: true
+                    text: i18n.tr("What is Ubuntu Touch?")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q1.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q2
+                    Layout.fillWidth: true
+                    text: i18n.tr("Tell me a joke!")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q2.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q3
+                    Layout.fillWidth: true
+                    text: i18n.tr("A fun recipe in 10 minutes")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q3.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q4
+                    Layout.fillWidth: true
+                    text: i18n.tr("2 min story")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q4.text
+                        chatPage.sendMessage()
+                    }
                 }
             }
         }
