@@ -674,9 +674,17 @@ Page {
                     Layout.preferredWidth: units.gu(4.5)
                     Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    iconName: chatPage.isResponding ? "media-playback-stop" : "send"
                     color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
+
+                    Icon {
+                        anchors.centerIn: parent
+                        name: chatPage.isResponding ? "media-playback-stop" : "send"
+                        width: units.gu(2.4)
+                        height: units.gu(2.4)
+                        color: sendButton.enabled ? "white" : "#94A3B8"
+                    }
+
                     onClicked: {
                         if (chatPage.isResponding) {
                             chatPage.stopInference()
