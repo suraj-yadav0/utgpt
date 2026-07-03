@@ -19,6 +19,9 @@ MainView {
     automaticOrientation: true
     anchorToKeyboard: true
 
+    readonly property color themeColor: "#5C0A1A" // Dark Maroon
+    readonly property color themeBgLight: "#F5EAEB" // Light Maroon tint
+
     width: units.gu(45)
     height: units.gu(75)
 
@@ -171,7 +174,7 @@ MainView {
     }
 
     function tabButtonColor(index) {
-        return currentTabIndex === index ? "#E95420" : "#d7d7d7"
+        return currentTabIndex === index ? root.themeColor : "#d7d7d7"
     }
 
     Component {
@@ -358,7 +361,7 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: units.gu(8)
-                color: "#E95420" // Primary orange
+                color: root.themeColor // Primary theme color
 
                 RowLayout {
                     anchors.fill: parent
@@ -431,7 +434,7 @@ MainView {
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         width: units.gu(0.4)
-                        color: "#E95420"
+                        color: root.themeColor
                         visible: root.currentSessionId === modelData.id
                     }
 
@@ -445,14 +448,14 @@ MainView {
                             name: "message"
                             width: units.gu(2.2)
                             height: units.gu(2.2)
-                            color: root.currentSessionId === modelData.id ? "#E95420" : "#64748B"
+                            color: root.currentSessionId === modelData.id ? root.themeColor : "#64748B"
                             Layout.alignment: Qt.AlignVCenter
                         }
 
                         // Session title label
                         Label {
                             text: modelData.title
-                            color: root.currentSessionId === modelData.id ? "#E95420" : "#475569"
+                            color: root.currentSessionId === modelData.id ? root.themeColor : "#475569"
                             font.bold: root.currentSessionId === modelData.id
                             fontSize: "medium"
                             Layout.fillWidth: true

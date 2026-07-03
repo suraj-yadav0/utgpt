@@ -19,7 +19,7 @@ Row {
         height: units.gu(4)
         radius: units.gu(0.8)
         color: {
-            if (root.currentTabIndex === 0) return "#FFEBE6"
+            if (root.currentTabIndex === 0) return root.themeBgLight
             if (chatMouse.containsMouse) return "#F1F5F9"
             return "transparent"
         }
@@ -29,7 +29,7 @@ Row {
             name: "message"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 0 ? "#E95420" : "#5C5C5C"
+            color: root.currentTabIndex === 0 ? root.themeColor : "#5C5C5C"
         }
 
         MouseArea {
@@ -46,7 +46,7 @@ Row {
         height: units.gu(4)
         radius: units.gu(0.8)
         color: {
-            if (root.currentTabIndex === 1) return "#FFEBE6"
+            if (root.currentTabIndex === 1) return root.themeBgLight
             if (modelsMouse.containsMouse) return "#F1F5F9"
             return "transparent"
         }
@@ -56,7 +56,7 @@ Row {
             name: "package-x-generic-symbolic"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 1 ? "#E95420" : "#5C5C5C"
+            color: root.currentTabIndex === 1 ? root.themeColor : "#5C5C5C"
         }
 
         MouseArea {
@@ -73,7 +73,7 @@ Row {
         height: units.gu(4)
         radius: units.gu(0.8)
         color: {
-            if (root.currentTabIndex === 2) return "#FFEBE6"
+            if (root.currentTabIndex === 2) return root.themeBgLight
             if (settingsMouse.containsMouse) return "#F1F5F9"
             return "transparent"
         }
@@ -83,7 +83,7 @@ Row {
             name: "settings"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 2 ? "#E95420" : "#5C5C5C"
+            color: root.currentTabIndex === 2 ? root.themeColor : "#5C5C5C"
         }
 
         MouseArea {

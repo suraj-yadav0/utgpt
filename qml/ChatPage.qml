@@ -394,7 +394,7 @@ Page {
                     width: units.gu(3.5)
                     height: units.gu(3.5)
                     radius: units.gu(1)
-                    color: root.availableModels.length > 0 ? "#FFEBE6" : "#FFF5F5"
+                    color: root.availableModels.length > 0 ? root.themeBgLight : "#FFF5F5"
                     Layout.alignment: Qt.AlignVCenter
 
                     Icon {
@@ -402,7 +402,7 @@ Page {
                         name: root.availableModels.length > 0 ? "message" : "dialog-warning"
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: root.availableModels.length > 0 ? "#E95420" : "#E53E3E"
+                        color: root.availableModels.length > 0 ? root.themeColor : "#E53E3E"
                     }
                 }
 
@@ -490,7 +490,7 @@ Page {
                     width: units.gu(4)
                     height: units.gu(4)
                     radius: width / 2
-                    color: model.role === "user" ? "#FFEBE6" : "#E2E8F0"
+                    color: model.role === "user" ? root.themeBgLight : "#E2E8F0"
                     anchors.top: parent.top
                     anchors.topMargin: units.gu(0.5)
                     anchors.left: model.role === "assistant" ? parent.left : undefined
@@ -499,7 +499,7 @@ Page {
                     Label {
                         anchors.centerIn: parent
                         text: model.role === "user" ? "U" : "AI"
-                        color: model.role === "user" ? "#E95420" : "#4A5568"
+                        color: model.role === "user" ? root.themeColor : "#4A5568"
                         font.bold: true
                         fontSize: "small"
                     }
@@ -524,7 +524,7 @@ Page {
                         width: Math.min(messageText.implicitWidth + units.gu(3.5), messageList.width * 0.76)
                         height: messageText.implicitHeight + units.gu(2)
                         radius: units.gu(1.5)
-                        color: model.role === "user" ? "#E95420" : "#FFFFFF"
+                        color: model.role === "user" ? root.themeColor : "#FFFFFF"
                         border.color: model.role === "user" ? "transparent" : "#E2E8F0"
                         border.width: model.role === "user" ? 0 : 1
 
@@ -670,7 +670,7 @@ Page {
                     Layout.preferredHeight: units.gu(5)
                     Layout.alignment: Qt.AlignVCenter
                     text: chatPage.isResponding ? i18n.tr("Stop") : i18n.tr("Send")
-                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : "#E95420")
+                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
                     onClicked: {
                         if (chatPage.isResponding) {
@@ -696,7 +696,7 @@ Page {
             width: units.gu(8)
             height: units.gu(8)
             radius: units.gu(2)
-            color: "#FFEBE6"
+            color: root.themeBgLight
             anchors.horizontalCenter: parent.horizontalCenter
 
             Icon {
@@ -704,7 +704,7 @@ Page {
                 name: "message"
                 width: units.gu(4)
                 height: units.gu(4)
-                color: "#E95420"
+                color: root.themeColor
             }
         }
 

@@ -462,7 +462,7 @@ Page {
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#94A3B8")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeColor : "#94A3B8")
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {
