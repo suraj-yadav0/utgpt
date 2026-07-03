@@ -31,6 +31,7 @@ MainView {
         property int threads: 4
         property int ctxSize: 2048
         property string flashAttn: "auto"
+        property string kvCache: "f16"
     }
 
     property bool backendReady: false
@@ -44,6 +45,7 @@ MainView {
     property int threads: appSettings.threads
     property int ctxSize: appSettings.ctxSize
     property string flashAttn: appSettings.flashAttn
+    property string kvCache: appSettings.kvCache
     property bool sidebarOpen: false
     property var modelCatalog: []
     property var currentSessionId: null
@@ -55,6 +57,7 @@ MainView {
     onThreadsChanged: appSettings.threads = threads
     onCtxSizeChanged: appSettings.ctxSize = ctxSize
     onFlashAttnChanged: appSettings.flashAttn = flashAttn
+    onKvCacheChanged: appSettings.kvCache = kvCache
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -223,6 +226,7 @@ MainView {
                 threads: root.threads
                 ctxSize: root.ctxSize
                 flashAttn: root.flashAttn
+                kvCache: root.kvCache
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
@@ -247,12 +251,14 @@ MainView {
                 threads: root.threads
                 ctxSize: root.ctxSize
                 flashAttn: root.flashAttn
+                kvCache: root.kvCache
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
                 onThreadsChanged: root.threads = threads
                 onCtxSizeChanged: root.ctxSize = ctxSize
                 onFlashAttnChanged: root.flashAttn = flashAttn
+                onKvCacheChanged: root.kvCache = kvCache
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }

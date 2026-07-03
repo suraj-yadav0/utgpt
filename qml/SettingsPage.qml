@@ -50,6 +50,7 @@ Page {
     property int threads: 4
     property int ctxSize: 2048
     property string flashAttn: "auto"
+    property string kvCache: "f16"
     property string freeStorage: i18n.tr("Checking storage...")
     property var availableModels: root.availableModels
 
@@ -530,6 +531,30 @@ Page {
                         onActivated: {
                             settingsPage.flashAttn = model[currentIndex]
                         }
+                    }
+
+                    Label {
+                        text: i18n.tr("KV Cache Quantization")
+                        color: "#475569"
+                        fontSize: "small"
+                    }
+
+                    QQC2.ComboBox {
+                        id: kvSelector
+                        width: parent.width
+                        model: ["f16", "q8_0", "q4_0"]
+                        currentIndex: model.indexOf(settingsPage.kvCache) >= 0 ? model.indexOf(settingsPage.kvCache) : 0
+                        onActivated: {
+                            settingsPage.kvCache = model[currentIndex]
+                        }
+                    }
+
+                    Label {
+                        text: i18n.tr("Recommended: q8_0 or q4_0 to significantly reduce memory transfer and speed up token generation on mobile CPUs.")
+                        color: "#94A3B8"
+                        fontSize: "x-small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
                     }
                 }
             }

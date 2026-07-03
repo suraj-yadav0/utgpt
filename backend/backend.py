@@ -1090,6 +1090,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     threads = 4
     ctx_size = 2048
     flash_attn = "auto"
+    kv_cache = "f16"
     token_callback = None
     done_callback = None
 
@@ -1097,14 +1098,24 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         token_callback, done_callback = args
     elif len(args) == 5:
         threads, ctx_size, flash_attn, token_callback, done_callback = args
+    elif len(args) == 6:
+        threads, ctx_size, flash_attn, kv_cache, token_callback, done_callback = args
     elif len(args) > 0:
         if not isinstance(args[0], (str, callable)):
             try:
                 threads = int(args[0])
                 if len(args) > 1: ctx_size = int(args[1])
                 if len(args) > 2: flash_attn = str(args[2])
-                if len(args) > 3: token_callback = args[3]
-                if len(args) > 4: done_callback = args[4]
+                
+                # Check if the 4th argument (args[3]) is a callback or kv_cache setting
+                if len(args) > 3:
+                    if args[3] in ["f16", "q8_0", "q4_0"]:
+                        kv_cache = str(args[3])
+                        if len(args) > 4: token_callback = args[4]
+                        if len(args) > 5: done_callback = args[5]
+                    else:
+                        token_callback = args[3]
+                        if len(args) > 4: done_callback = args[4]
             except Exception:
                 pass
         else:
@@ -1189,6 +1200,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 "-c", str(int(ctx_size)),
                 "-fa", str(flash_attn)
             ]
+            if kv_cache in ["q8_0", "q4_0"]:
+                additional_args.extend(["-ctk", kv_cache, "-ctv", kv_cache])
             for token in stop_tokens:
                 additional_args.extend(["-r", token])
             
