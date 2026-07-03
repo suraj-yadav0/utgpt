@@ -662,6 +662,7 @@ Page {
                 TextField {
                     id: composer
                     Layout.fillWidth: true
+                    Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
                     placeholderText: i18n.tr("Type a message...")
                     enabled: !chatPage.isResponding
@@ -670,10 +671,10 @@ Page {
 
                 Button {
                     id: sendButton
-                    Layout.preferredWidth: units.gu(10)
-                    Layout.preferredHeight: units.gu(5)
+                    Layout.preferredWidth: units.gu(4.5)
+                    Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    text: chatPage.isResponding ? i18n.tr("Stop") : i18n.tr("Send")
+                    iconName: chatPage.isResponding ? "media-playback-stop" : "send"
                     color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
                     onClicked: {
