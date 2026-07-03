@@ -14,6 +14,7 @@ An offline AI chat application built specifically for Ubuntu Touch, allowing use
 - Copy to Clipboard: Copy assistant messages instantly with visual confirmation feedback.
 - Animated Thinking State: Displays a dynamic thinking indicator while waiting for the model to prepare the first token.
 - Local Execution: Run chats entirely offline, keeping conversations private.
+- Lomiri UI Improvements: Features a wine/dark maroon theme, swipe-to-delete chat sessions, response regeneration, and a grid-based suggested questions dashboard.
 
 ## Architecture
 
