@@ -869,6 +869,25 @@ def clear_chat_history():
     conn.close()
     return True
 
+def truncate_session_messages(session_id, keep_count):
+    if not session_id:
+        return False
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    rows = cursor.fetchall()
+    
+    if len(rows) > keep_count:
+        ids_to_delete = [row[0] for row in rows[keep_count:]]
+        placeholders = ",".join("?" for _ in ids_to_delete)
+        cursor.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", ids_to_delete)
+        conn.commit()
+        
+    conn.close()
+    return True
+
 def retrieve_relevant_context(query, exclude_texts, limit=3):
     init_db()
     stopwords = {

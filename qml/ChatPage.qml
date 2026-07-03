@@ -172,6 +172,56 @@ Page {
         userStopped = false
     }
 
+    function regenerateResponse(idx) {
+        if (isResponding) return;
+        if (idx < 0 || idx >= messageModel.count) return;
+        if (messageModel.get(idx).role !== "user") return;
+
+        if (!model) {
+            messageModel.append({ "role": "assistant", "text": i18n.tr("Select a model in Settings before chatting.") })
+            scrollToBottom()
+            return
+        }
+
+        // 1. Truncate UI model to only keep up to the user message at idx
+        while (messageModel.count > idx + 1) {
+            messageModel.remove(messageModel.count - 1)
+        }
+
+        // 2. Truncate SQLite database
+        if (root.currentSessionId) {
+            python.call("backend.truncate_session_messages", [root.currentSessionId, idx + 1])
+        }
+
+        // 3. Build history context
+        var history = []
+        for (var i = 0; i < messageModel.count; i++) {
+            var item = messageModel.get(i)
+            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking") && item.text !== "...")) {
+                history.push({ "role": item.role, "content": item.text })
+            }
+        }
+
+        // 4. Start response generation
+        messageModel.append({ "role": "assistant", "text": "Thinking" })
+        isResponding = true
+        pendingRequestId = "chat-" + Date.now()
+        scrollToBottom()
+
+        python.call(
+            "backend.run_inference",
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, pendingRequestId, pendingRequestId],
+            function(result) {
+                if (result === false && isResponding) {
+                    var lastIndex = messageModel.count - 1
+                    if (lastIndex >= 0 && (messageModel.get(lastIndex).text === "..." || messageModel.get(lastIndex).text.startsWith("Thinking"))) {
+                        finishResponse(false, i18n.tr("Unable to start inference."))
+                    }
+                }
+            }
+        )
+    }
+
     function sendMessage() {
         var trimmed = composer.text.trim()
         if (!trimmed || isResponding) {
@@ -536,6 +586,49 @@ Page {
                                     Clipboard.push(model.text)
                                     copyBtn.isCopied = true
                                     copiedTimer.restart()
+                                }
+                            }
+                        }
+                    }
+
+                    // Redo action button
+                    RowLayout {
+                        visible: model.role === "user" && !chatPage.isResponding
+                        spacing: units.gu(1)
+                        anchors.right: parent.right
+
+                        Rectangle {
+                            id: redoBtn
+                            width: units.gu(9)
+                            height: units.gu(3)
+                            radius: units.gu(0.6)
+                            color: "#FFFFFF"
+                            border.color: "#E2E8F0"
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: units.gu(0.5)
+
+                                Icon {
+                                    name: "reload"
+                                    width: units.gu(1.6)
+                                    height: units.gu(1.6)
+                                    color: "#4A5568"
+                                }
+
+                                Label {
+                                    text: i18n.tr("Redo")
+                                    color: "#4A5568"
+                                    fontSize: "x-small"
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    chatPage.regenerateResponse(index)
                                 }
                             }
                         }
