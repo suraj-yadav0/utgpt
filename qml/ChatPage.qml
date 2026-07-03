@@ -16,7 +16,7 @@ Page {
 
     header: PageHeader {
         id: chatHeader
-        title: i18n.tr("L O C A L M I N D")
+        title: i18n.tr("UTGPT")
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
