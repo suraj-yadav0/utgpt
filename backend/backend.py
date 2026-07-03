@@ -988,6 +988,8 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
                 context_str += f"- {text_cleaned}\n"
 
     # Format using resolved template_type
+    prompt = ""
+    boundary = ""
     if template_type == "llama3":
         system_content = "You are a helpful assistant."
         if context_str:
@@ -999,7 +1001,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
         prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{current_query}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        return prompt, "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        boundary = "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
     elif template_type == "chatml":
         system_content = "You are a helpful assistant."
@@ -1012,7 +1014,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
         prompt += f"<|im_start|>user\n{current_query}<|im_end|>\n"
         prompt += "<|im_start|>assistant\n"
-        return prompt, "<|im_start|>assistant\n"
+        boundary = "<|im_start|>assistant\n"
 
     elif template_type == "zephyr":
         system_content = "You are a helpful assistant."
@@ -1025,7 +1027,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             prompt += f"<|{role}|>\n{content}</s>\n"
         prompt += f"<|user|>\n{current_query}</s>\n"
         prompt += "<|assistant|>\n"
-        return prompt, "<|assistant|>\n"
+        boundary = "<|assistant|>\n"
 
     elif template_type == "gemma":
         system_content = "You are a helpful assistant."
@@ -1039,7 +1041,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
         prompt += f"<start_of_turn>user\n{current_query}<end_of_turn>\n"
         prompt += "<start_of_turn>assistant\n"
-        return prompt, "<start_of_turn>assistant\n"
+        boundary = "<start_of_turn>assistant\n"
 
     elif template_type == "phi3":
         system_content = "You are a helpful assistant."
@@ -1053,7 +1055,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             prompt += f"<|{role}|>\n{content}<|end|>\n"
         prompt += f"<|user|>\n{current_query}<|end|>\n"
         prompt += "<|assistant|>\n"
-        return prompt, "<|assistant|>\n"
+        boundary = "<|assistant|>\n"
 
     else:
         prompt = ""
@@ -1064,7 +1066,12 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             content = msg.get("content", "")
             prompt += f"{role}: {content}\n"
         prompt += f"User: {current_query}\nAssistant:"
-        return prompt, "Assistant:"
+        boundary = "Assistant:"
+
+    if "deepseek-r1" in model_lower:
+        prompt += "<think>\n"
+
+    return prompt, boundary
 
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     # Support backward compatible dynamic signatures
@@ -1230,6 +1237,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             output_buffer = ""
             has_emitted_content = False
+
+            if "deepseek-r1" in model_filename.lower():
+                _emit_token(token_callback, "<think>\n")
+                has_emitted_content = True
 
             if is_completion:
                 print("UTGPT_LOG: Using simplified completion stdout read loop", file=sys.stderr, flush=True)
