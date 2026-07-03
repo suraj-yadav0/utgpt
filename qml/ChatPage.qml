@@ -16,7 +16,11 @@ Page {
 
     header: PageHeader {
         id: chatHeader
-        title: i18n.tr("L O C A L M I N D")
+        title: i18n.tr("Chat")
+        StyleHints {
+            backgroundColor: root.themeColor
+            foregroundColor: "white"
+        }
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
@@ -41,6 +45,7 @@ Page {
     property int threads: 4
     property int ctxSize: 2048
     property string flashAttn: "auto"
+    property string kvCache: "f16"
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
@@ -48,7 +53,9 @@ Page {
 
 
     function loadHistory(sessionId) {
-        console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
+        if (root.debugMode) {
+            console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
+        }
         if (sessionId === null || sessionId === undefined) {
             messageModel.clear()
             return
@@ -72,7 +79,9 @@ Page {
 
     function stopAndSaveCurrentResponse() {
         if (!isResponding) return;
-        console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        if (root.debugMode) {
+            console.log("QML_LOG: stopAndSaveCurrentResponse called for session:", root.currentSessionId)
+        }
         python.call("backend.stop_all_inference", [])
         if (messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
@@ -118,10 +127,24 @@ Page {
         var lastIndex = messageModel.count - 1
         var currentText = messageModel.get(lastIndex).text
         if (currentText === "..." || currentText.startsWith("Thinking")) {
-            messageModel.setProperty(lastIndex, "text", chunk)
-        } else {
-            messageModel.setProperty(lastIndex, "text", currentText + chunk)
+            currentText = ""
         }
+        var newText = currentText + chunk
+
+        // Format reasoning blocks cleanly for markdown/text display
+        newText = newText.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
+                         .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
+                         .replace(/<\|im_end\|>/gi, "")
+                         .replace(/<\/im_end>/gi, "")
+                         .replace(/<\|im_start\|>/gi, "")
+                         .replace(/<end_of_turn>/gi, "")
+                         .replace(/<start_of_turn>/gi, "")
+                         .replace(/<\|end\|>/gi, "")
+                         .replace(/<\|eot_id\|>/gi, "")
+                         .replace(/<\|start_header_id\|>/gi, "")
+                         .replace(/\[end of text\]/gi, "")
+
+        messageModel.setProperty(lastIndex, "text", newText)
         scrollToBottom()
     }
 
@@ -151,6 +174,56 @@ Page {
         }
 
         userStopped = false
+    }
+
+    function regenerateResponse(idx) {
+        if (isResponding) return;
+        if (idx < 0 || idx >= messageModel.count) return;
+        if (messageModel.get(idx).role !== "user") return;
+
+        if (!model) {
+            messageModel.append({ "role": "assistant", "text": i18n.tr("Select a model in Settings before chatting.") })
+            scrollToBottom()
+            return
+        }
+
+        // 1. Truncate UI model to only keep up to the user message at idx
+        while (messageModel.count > idx + 1) {
+            messageModel.remove(messageModel.count - 1)
+        }
+
+        // 2. Truncate SQLite database
+        if (root.currentSessionId) {
+            python.call("backend.truncate_session_messages", [root.currentSessionId, idx + 1])
+        }
+
+        // 3. Build history context
+        var history = []
+        for (var i = 0; i < messageModel.count; i++) {
+            var item = messageModel.get(i)
+            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking") && item.text !== "...")) {
+                history.push({ "role": item.role, "content": item.text })
+            }
+        }
+
+        // 4. Start response generation
+        messageModel.append({ "role": "assistant", "text": "Thinking" })
+        isResponding = true
+        pendingRequestId = "chat-" + Date.now()
+        scrollToBottom()
+
+        python.call(
+            "backend.run_inference",
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, pendingRequestId, pendingRequestId],
+            function(result) {
+                if (result === false && isResponding) {
+                    var lastIndex = messageModel.count - 1
+                    if (lastIndex >= 0 && (messageModel.get(lastIndex).text === "..." || messageModel.get(lastIndex).text.startsWith("Thinking"))) {
+                        finishResponse(false, i18n.tr("Unable to start inference."))
+                    }
+                }
+            }
+        )
     }
 
     function sendMessage() {
@@ -194,7 +267,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -215,7 +288,9 @@ Page {
         target: python
 
         function onReceived(result) {
-            console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
+            if (root.debugMode) {
+                console.log("QML_LOG: ChatPage received result type:", typeof result, "JSON:", JSON.stringify(result), "pendingRequestId:", pendingRequestId)
+            }
             
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null
@@ -224,7 +299,9 @@ Page {
             }
 
             if (data.payload.requestId !== pendingRequestId) {
-                console.log("QML_LOG: Request ID mismatch: " + data.payload.requestId + " != " + pendingRequestId)
+                if (root.debugMode) {
+                    console.log("QML_LOG: Request ID mismatch: " + data.payload.requestId + " != " + pendingRequestId)
+                }
                 return
             }
 
@@ -321,7 +398,7 @@ Page {
                     width: units.gu(3.5)
                     height: units.gu(3.5)
                     radius: units.gu(1)
-                    color: root.availableModels.length > 0 ? "#FFEBE6" : "#FFF5F5"
+                    color: root.availableModels.length > 0 ? root.themeBgLight : "#FFF5F5"
                     Layout.alignment: Qt.AlignVCenter
 
                     Icon {
@@ -329,7 +406,7 @@ Page {
                         name: root.availableModels.length > 0 ? "message" : "dialog-warning"
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: root.availableModels.length > 0 ? "#E95420" : "#E53E3E"
+                        color: root.availableModels.length > 0 ? root.themeColor : "#E53E3E"
                     }
                 }
 
@@ -417,7 +494,7 @@ Page {
                     width: units.gu(4)
                     height: units.gu(4)
                     radius: width / 2
-                    color: model.role === "user" ? "#FFEBE6" : "#E2E8F0"
+                    color: model.role === "user" ? root.themeBgLight : "#E2E8F0"
                     anchors.top: parent.top
                     anchors.topMargin: units.gu(0.5)
                     anchors.left: model.role === "assistant" ? parent.left : undefined
@@ -426,7 +503,7 @@ Page {
                     Label {
                         anchors.centerIn: parent
                         text: model.role === "user" ? "U" : "AI"
-                        color: model.role === "user" ? "#E95420" : "#4A5568"
+                        color: model.role === "user" ? root.themeColor : "#4A5568"
                         font.bold: true
                         fontSize: "small"
                     }
@@ -451,7 +528,7 @@ Page {
                         width: Math.min(messageText.implicitWidth + units.gu(3.5), messageList.width * 0.76)
                         height: messageText.implicitHeight + units.gu(2)
                         radius: units.gu(1.5)
-                        color: model.role === "user" ? "#E95420" : "#FFFFFF"
+                        color: model.role === "user" ? root.themeColor : "#FFFFFF"
                         border.color: model.role === "user" ? "transparent" : "#E2E8F0"
                         border.width: model.role === "user" ? 0 : 1
 
@@ -517,6 +594,49 @@ Page {
                             }
                         }
                     }
+
+                    // Redo action button
+                    RowLayout {
+                        visible: model.role === "user" && !chatPage.isResponding
+                        spacing: units.gu(1)
+                        anchors.right: parent.right
+
+                        Rectangle {
+                            id: redoBtn
+                            width: units.gu(9)
+                            height: units.gu(3)
+                            radius: units.gu(0.6)
+                            color: "#FFFFFF"
+                            border.color: "#E2E8F0"
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: units.gu(0.5)
+
+                                Icon {
+                                    name: "reload"
+                                    width: units.gu(1.6)
+                                    height: units.gu(1.6)
+                                    color: "#4A5568"
+                                }
+
+                                Label {
+                                    text: i18n.tr("Redo")
+                                    color: "#4A5568"
+                                    fontSize: "x-small"
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    chatPage.regenerateResponse(index)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -542,6 +662,7 @@ Page {
                 TextField {
                     id: composer
                     Layout.fillWidth: true
+                    Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
                     placeholderText: i18n.tr("Type a message...")
                     enabled: !chatPage.isResponding
@@ -550,12 +671,20 @@ Page {
 
                 Button {
                     id: sendButton
-                    Layout.preferredWidth: units.gu(10)
-                    Layout.preferredHeight: units.gu(5)
+                    Layout.preferredWidth: units.gu(4.5)
+                    Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    text: chatPage.isResponding ? i18n.tr("Stop") : i18n.tr("Send")
-                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : "#E95420")
+                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
+
+                    Icon {
+                        anchors.centerIn: parent
+                        name: chatPage.isResponding ? "media-playback-stop" : "send"
+                        width: units.gu(2.4)
+                        height: units.gu(2.4)
+                        color: sendButton.enabled ? "white" : "#94A3B8"
+                    }
+
                     onClicked: {
                         if (chatPage.isResponding) {
                             chatPage.stopInference()
@@ -580,7 +709,7 @@ Page {
             width: units.gu(8)
             height: units.gu(8)
             radius: units.gu(2)
-            color: "#FFEBE6"
+            color: root.themeBgLight
             anchors.horizontalCenter: parent.horizontalCenter
 
             Icon {
@@ -588,7 +717,7 @@ Page {
                 name: "message"
                 width: units.gu(4)
                 height: units.gu(4)
-                color: "#E95420"
+                color: root.themeColor
             }
         }
 
@@ -622,25 +751,54 @@ Page {
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
-            Button {
-                id: q1
+            GridLayout {
                 width: parent.width
-                text: i18n.tr("What is Ubuntu Touch?")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = q1.text
-                    chatPage.sendMessage()
-                }
-            }
+                columns: 2
+                rowSpacing: units.gu(1)
+                columnSpacing: units.gu(1)
 
-            Button {
-                id: q2
-                width: parent.width
-                text: i18n.tr("Explain QML in simple terms")
-                color: "#F1F5F9"
-                onClicked: {
-                    composer.text = q2.text
-                    chatPage.sendMessage()
+                Button {
+                    id: q1
+                    Layout.fillWidth: true
+                    text: i18n.tr("What is Ubuntu Touch?")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q1.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q2
+                    Layout.fillWidth: true
+                    text: i18n.tr("Tell me a joke!")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q2.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q3
+                    Layout.fillWidth: true
+                    text: i18n.tr("A fun recipe in 10 minutes")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q3.text
+                        chatPage.sendMessage()
+                    }
+                }
+
+                Button {
+                    id: q4
+                    Layout.fillWidth: true
+                    text: i18n.tr("2 min story")
+                    color: "#F1F5F9"
+                    onClicked: {
+                        composer.text = q4.text
+                        chatPage.sendMessage()
+                    }
                 }
             }
         }

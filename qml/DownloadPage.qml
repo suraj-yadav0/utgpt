@@ -16,6 +16,10 @@ Page {
     header: PageHeader {
         id: downloadHeader
         title: i18n.tr("Download Models")
+        StyleHints {
+            backgroundColor: root.themeColor
+            foregroundColor: "white"
+        }
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
@@ -144,7 +148,9 @@ Page {
         target: python
 
         function onReceived(result) {
-            console.log("QML_LOG: DownloadPage received result type:", typeof result, "JSON:", JSON.stringify(result))
+            if (root.debugMode) {
+                console.log("QML_LOG: DownloadPage received result type:", typeof result, "JSON:", JSON.stringify(result))
+            }
             
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null
@@ -460,7 +466,7 @@ Page {
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? "#E95420" : "#94A3B8")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeColor : "#94A3B8")
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {

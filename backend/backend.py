@@ -17,6 +17,18 @@ import time
 import sys
 import sqlite3
 
+DEBUG_MODE = os.environ.get("UTGPT_DEBUG", "").lower() in ("1", "true", "yes")
+
+def log_debug(msg):
+    if DEBUG_MODE:
+        print("UTGPT_LOG [DEBUG]: {0}".format(msg), file=sys.stderr, flush=True)
+
+def log_info(msg):
+    print("UTGPT_LOG [INFO]: {0}".format(msg), file=sys.stderr, flush=True)
+
+def log_error(msg):
+    print("UTGPT_LOG [ERROR]: {0}".format(msg), file=sys.stderr, flush=True)
+
 def _urlopen(req, timeout=60):
     try:
         import ssl
@@ -85,7 +97,8 @@ DEFAULT_CATALOG = [
         "context": "8,192 tokens",
         "maxContext": 8192,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Fast general chat, low resource devices"
+        "usage": "Fast general chat, low resource devices",
+        "promptTemplate": "chatml"
     },
     {
         "name": "Qwen2.5-1.5B",
@@ -97,7 +110,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Excellent multilingual capabilities, coding & reasoning"
+        "usage": "Excellent multilingual capabilities, coding & reasoning",
+        "promptTemplate": "chatml"
     },
     {
         "name": "DeepSeek-R1-Distill-Qwen-1.5B",
@@ -109,7 +123,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Distilled reasoning model, thinking step visualization, math/logic"
+        "usage": "Distilled reasoning model, thinking step visualization, math/logic",
+        "promptTemplate": "chatml"
     },
     {
         "name": "Llama-3.2-1B",
@@ -121,7 +136,8 @@ DEFAULT_CATALOG = [
         "context": "128,000 tokens",
         "maxContext": 128000,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Ultra-fast assistant, agentic tasks, long contexts"
+        "usage": "Ultra-fast assistant, agentic tasks, long contexts",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Llama-3.2-3B",
@@ -133,7 +149,8 @@ DEFAULT_CATALOG = [
         "context": "128,000 tokens",
         "maxContext": 128000,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Smart general assistant, high quality logic & reasoning"
+        "usage": "Smart general assistant, high quality logic & reasoning",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Gemma-2-2B",
@@ -145,7 +162,8 @@ DEFAULT_CATALOG = [
         "context": "8,192 tokens",
         "maxContext": 8192,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Lightweight high-quality chatting, instruction following"
+        "usage": "Lightweight high-quality chatting, instruction following",
+        "promptTemplate": "gemma"
     },
     {
         "name": "Phi-3-mini-4K",
@@ -157,7 +175,8 @@ DEFAULT_CATALOG = [
         "context": "4,096 tokens",
         "maxContext": 4096,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Reasoning, logical tasks, math and coding"
+        "usage": "Reasoning, logical tasks, math and coding",
+        "promptTemplate": "phi3"
     },
     {
         "name": "Granite-3.0-2B-Instruct",
@@ -169,7 +188,8 @@ DEFAULT_CATALOG = [
         "context": "4,096 tokens",
         "maxContext": 4096,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Enterprise tasks, translation, coding"
+        "usage": "Enterprise tasks, translation, coding",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Qwen2.5-0.5B",
@@ -181,7 +201,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage"
+        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage",
+        "promptTemplate": "chatml"
     },
     {
         "name": "TinyLlama-1.1B",
@@ -193,7 +214,8 @@ DEFAULT_CATALOG = [
         "context": "2,048 tokens",
         "maxContext": 2048,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely fast, simple chats on low-spec hardware"
+        "usage": "Extremely fast, simple chats on low-spec hardware",
+        "promptTemplate": "zephyr"
     }
 ]
 
@@ -266,7 +288,7 @@ def fetch_model_catalog():
                             item["compatibilityText"] = "Heavy (May lag/crash)"
                     return data
     except Exception as e:
-        print("UTGPT_LOG: Failed to fetch remote model catalog, using fallback: " + str(e), file=sys.stderr, flush=True)
+        log_error("Failed to fetch remote model catalog, using fallback: " + str(e))
     
     # Process fallbacks
     data = []
@@ -847,6 +869,25 @@ def clear_chat_history():
     conn.close()
     return True
 
+def truncate_session_messages(session_id, keep_count):
+    if not session_id:
+        return False
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    rows = cursor.fetchall()
+    
+    if len(rows) > keep_count:
+        ids_to_delete = [row[0] for row in rows[keep_count:]]
+        placeholders = ",".join("?" for _ in ids_to_delete)
+        cursor.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", ids_to_delete)
+        conn.commit()
+        
+    conn.close()
+    return True
+
 def retrieve_relevant_context(query, exclude_texts, limit=3):
     init_db()
     stopwords = {
@@ -895,95 +936,180 @@ def retrieve_relevant_context(query, exclude_texts, limit=3):
     
     return [{"role": m["role"], "text": m["text"]} for m in relevant_msgs]
 
+def get_model_metadata(model_filename):
+    # Try local models.json first
+    try:
+        models_json_path = os.path.join(APP_DIR, "assets", "models.json")
+        if os.path.exists(models_json_path):
+            with open(models_json_path, "r") as f:
+                catalog = json.load(f)
+                for item in catalog:
+                    if item.get("filename") == model_filename:
+                        return item
+    except Exception:
+        pass
+
+    # Fallback to DEFAULT_CATALOG
+    for item in DEFAULT_CATALOG:
+        if item.get("filename") == model_filename:
+            return item
+
+    return None
+
 def get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs):
     """
     Formats the conversation prompt using model-specific templates,
     integrating retrieved relevant history context (RAG) in the system prompt.
+    Includes context window budgeting to prevent leakage and out-of-token crashes.
     """
     model_lower = model_filename.lower()
+    metadata = get_model_metadata(model_filename)
     
-    context_str = ""
-    if context_msgs:
-        context_str = "Relevant context from previous conversations:\n"
-        for msg in context_msgs:
-            role_name = "User" if msg["role"] == "user" else "Assistant"
-            context_str += f"- {role_name}: {msg['text']}\n"
+    max_context = 2048
+    template_type = None
+    if metadata:
+        max_context = metadata.get("maxContext", 2048)
+        template_type = metadata.get("promptTemplate")
 
-    # 1. Llama-3 / Llama-3.2 / Granite
-    if "llama-3" in model_lower or "granite" in model_lower:
+    if not template_type:
+        if "llama-3" in model_lower or "granite" in model_lower:
+            template_type = "llama3"
+        elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
+            template_type = "chatml"
+        elif "gemma" in model_lower:
+            template_type = "gemma"
+        elif "phi-3" in model_lower:
+            template_type = "phi3"
+        elif "tinyllama" in model_lower:
+            template_type = "zephyr"
+        else:
+            template_type = "default"
+
+    # Context budgeting: reserve 25% of context window for generation
+    safe_token_budget = int(max_context * 0.75)
+    query_tokens = len(current_query) // 4
+    
+    allowed_recent_history = []
+    allowed_context_msgs = []
+    current_tokens = query_tokens + 50  # buffer for system prompt structure
+
+    # 1. Budget recent chat history first (newest to oldest)
+    for msg in reversed(recent_history):
+        content = msg.get("content", "")
+        msg_tok = len(content) // 4
+        if current_tokens + msg_tok < safe_token_budget:
+            allowed_recent_history.insert(0, msg)
+            current_tokens += msg_tok
+
+    # 2. Budget RAG context next
+    for msg in context_msgs:
+        text = msg.get("text", "")
+        msg_tok = len(text) // 4
+        if current_tokens + msg_tok < safe_token_budget:
+            allowed_context_msgs.append(msg)
+            current_tokens += msg_tok
+
+    context_str = ""
+    if allowed_context_msgs:
+        context_str = "Relevant facts and details from previous conversations:\n"
+        for msg in allowed_context_msgs:
+            # Strip any trailing newlines from stored messages to keep formatting clean
+            text_cleaned = msg.get("text", "").strip()
+            if text_cleaned:
+                context_str += f"- {text_cleaned}\n"
+
+    # Format using resolved template_type
+    prompt = ""
+    boundary = ""
+    if template_type == "llama3":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n\n{context_str}"
         prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
         prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{current_query}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
-        return prompt, "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        boundary = "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
-    # 2. Qwen2.5 / DeepSeek-R1-Distill-Qwen / SmolLM2 / TinyLlama
-    elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower or "tinyllama" in model_lower:
+    elif template_type == "chatml":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n\n{context_str}"
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
         prompt += f"<|im_start|>user\n{current_query}<|im_end|>\n"
         prompt += "<|im_start|>assistant\n"
-        return prompt, "<|im_start|>assistant\n"
+        boundary = "<|im_start|>assistant\n"
 
-    # 3. Gemma-2
-    elif "gemma" in model_lower:
+    elif template_type == "zephyr":
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n\n{context_str}"
+        prompt = f"<|system|>\n{system_content}</s>\n"
+        for msg in allowed_recent_history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<|{role}|>\n{content}</s>\n"
+        prompt += f"<|user|>\n{current_query}</s>\n"
+        prompt += "<|assistant|>\n"
+        boundary = "<|assistant|>\n"
+
+    elif template_type == "gemma":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n{context_str}"
         prompt = "<bos>"
         prompt += f"<start_of_turn>system\n{system_content}<end_of_turn>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
         prompt += f"<start_of_turn>user\n{current_query}<end_of_turn>\n"
         prompt += "<start_of_turn>assistant\n"
-        return prompt, "<start_of_turn>assistant\n"
+        boundary = "<start_of_turn>assistant\n"
 
-    # 4. Phi-3
-    elif "phi-3" in model_lower:
+    elif template_type == "phi3":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n{context_str}"
         prompt = "<s>"
         prompt += f"<|system|>\n{system_content}<|end|>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|{role}|>\n{content}<|end|>\n"
         prompt += f"<|user|>\n{current_query}<|end|>\n"
         prompt += "<|assistant|>\n"
-        return prompt, "<|assistant|>\n"
+        boundary = "<|assistant|>\n"
 
-    # 5. Default Fallback
     else:
         prompt = ""
         if context_str:
             prompt += f"System: {context_str}\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user").capitalize()
             content = msg.get("content", "")
             prompt += f"{role}: {content}\n"
         prompt += f"User: {current_query}\nAssistant:"
-        return prompt, "Assistant:"
+        boundary = "Assistant:"
+
+    if "deepseek-r1" in model_lower:
+        prompt += "<think>\n"
+
+    return prompt, boundary
 
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     # Support backward compatible dynamic signatures
     threads = 4
     ctx_size = 2048
     flash_attn = "auto"
+    kv_cache = "f16"
     token_callback = None
     done_callback = None
 
@@ -991,21 +1117,31 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         token_callback, done_callback = args
     elif len(args) == 5:
         threads, ctx_size, flash_attn, token_callback, done_callback = args
+    elif len(args) == 6:
+        threads, ctx_size, flash_attn, kv_cache, token_callback, done_callback = args
     elif len(args) > 0:
         if not isinstance(args[0], (str, callable)):
             try:
                 threads = int(args[0])
                 if len(args) > 1: ctx_size = int(args[1])
                 if len(args) > 2: flash_attn = str(args[2])
-                if len(args) > 3: token_callback = args[3]
-                if len(args) > 4: done_callback = args[4]
+                
+                # Check if the 4th argument (args[3]) is a callback or kv_cache setting
+                if len(args) > 3:
+                    if args[3] in ["f16", "q8_0", "q4_0"]:
+                        kv_cache = str(args[3])
+                        if len(args) > 4: token_callback = args[4]
+                        if len(args) > 5: done_callback = args[5]
+                    else:
+                        token_callback = args[3]
+                        if len(args) > 4: done_callback = args[4]
             except Exception:
                 pass
         else:
             token_callback = args[0]
             if len(args) > 1: done_callback = args[1]
 
-    print("UTGPT_LOG: Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn), file=sys.stderr, flush=True)
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn))
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
         recent_history = user_message[-5:-1] if len(user_message) > 1 else []
@@ -1018,16 +1154,16 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         current_query = str(user_message)
         context_msgs = retrieve_relevant_context(current_query, {current_query}, limit=3)
         prompt, boundary = get_prompt_and_boundary(model_filename, current_query, [], context_msgs)
-    print("UTGPT_LOG: Constructed prompt: {0}".format(repr(prompt)), file=sys.stderr, flush=True)
+    log_debug("Constructed prompt: {0}".format(repr(prompt)))
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
-        print("UTGPT_LOG: Error - No model selected", file=sys.stderr, flush=True)
+        log_error("No model selected")
         _emit_done(done_callback, ok=False, error_message="No model selected.")
         return False
 
     if not os.path.exists(model_path):
-        print("UTGPT_LOG: Error - Model file not found at {0}".format(model_path), file=sys.stderr, flush=True)
+        log_error("Model file not found at {0}".format(model_path))
         _emit_done(done_callback, ok=False, error_message="Model file not found: {0}".format(model_filename))
         return False
 
@@ -1037,7 +1173,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
         else:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
-        print("UTGPT_LOG: Error - inference engine not found: {0}".format(error_msg), file=sys.stderr, flush=True)
+        log_error("inference engine not found: {0}".format(error_msg))
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
@@ -1045,14 +1181,48 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         process = None
         try:
             is_completion = "llama-completion" in cli_path
-            print("UTGPT_LOG: Launching inference engine: {0}".format(cli_path), file=sys.stderr, flush=True)
-            
+            log_info("Launching inference engine: {0}".format(cli_path))
+
+            # Determine template type to pass correct reverse prompts/stop tokens
+            metadata = get_model_metadata(model_filename)
+            template_type = None
+            if metadata:
+                template_type = metadata.get("promptTemplate")
+            if not template_type:
+                model_lower = model_filename.lower()
+                if "llama-3" in model_lower or "granite" in model_lower:
+                    template_type = "llama3"
+                elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
+                    template_type = "chatml"
+                elif "gemma" in model_lower:
+                    template_type = "gemma"
+                elif "phi-3" in model_lower:
+                    template_type = "phi3"
+                elif "tinyllama" in model_lower:
+                    template_type = "zephyr"
+
+            stop_tokens = []
+            if template_type == "llama3":
+                stop_tokens = ["<|eot_id|>", "<|start_header_id|>"]
+            elif template_type == "chatml":
+                stop_tokens = ["<|im_end|>", "<|im_start|>", "</im_end>"]
+            elif template_type == "zephyr":
+                stop_tokens = ["</s>", "<|user|>"]
+            elif template_type == "gemma":
+                stop_tokens = ["<end_of_turn>", "<start_of_turn>"]
+            elif template_type == "phi3":
+                stop_tokens = ["<|end|>", "<|user|>"]
+
             additional_args = [
                 "-t", str(int(threads)),
                 "-tb", str(int(threads)),
                 "-c", str(int(ctx_size)),
                 "-fa", str(flash_attn)
             ]
+            if kv_cache in ["q8_0", "q4_0"]:
+                additional_args.extend(["-ctk", kv_cache, "-ctv", kv_cache])
+            for token in stop_tokens:
+                additional_args.extend(["-r", token])
             
             if is_completion:
                 args = [
@@ -1095,7 +1265,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 env=env
             )
             _register_process(process)
-            print("UTGPT_LOG: Inference engine launched successfully, starting stdout read loop", file=sys.stderr, flush=True)
+            log_info("Inference engine launched successfully, starting stdout read loop")
 
             stderr_lines = []
             def log_stderr():
@@ -1112,8 +1282,12 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             output_buffer = ""
             has_emitted_content = False
 
+            if "deepseek-r1" in model_filename.lower():
+                _emit_token(token_callback, "<think>\n")
+                has_emitted_content = True
+
             if is_completion:
-                print("UTGPT_LOG: Using simplified completion stdout read loop", file=sys.stderr, flush=True)
+                log_debug("Using simplified completion stdout read loop")
                 while True:
                     char = process.stdout.read(1)
                     if not char:
@@ -1137,10 +1311,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     # Clean up llama-completion's end-of-text markers
                     output_buffer = output_buffer.replace(" [end of text]", "").replace("[end of text]", "")
                     if output_buffer:
-                        print("UTGPT_LOG: Emitting remaining completion buffer: {0}".format(repr(output_buffer)), file=sys.stderr, flush=True)
+                        log_debug("Emitting remaining completion buffer: {0}".format(repr(output_buffer)))
                         _emit_token(token_callback, output_buffer)
             else:
-                print("UTGPT_LOG: Using legacy cli boundary detection stdout read loop", file=sys.stderr, flush=True)
+                log_debug("Using legacy cli boundary detection stdout read loop")
                 started = False
                 checked_banner = False
                 
@@ -1154,21 +1328,21 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     if not checked_banner:
                         if len(output_buffer) >= 15:
                             if "Loading model" in output_buffer:
-                                print("UTGPT_LOG: Detected interactive banner, waiting for boundary", file=sys.stderr, flush=True)
+                                log_debug("Detected interactive banner, waiting for boundary")
                             else:
-                                print("UTGPT_LOG: No interactive banner detected, starting stream immediately", file=sys.stderr, flush=True)
+                                log_debug("No interactive banner detected, starting stream immediately")
                                 started = True
                             checked_banner = True
                     
                     if not started:
                         if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
-                            print("UTGPT_LOG: Detected boundary, starting token stream", file=sys.stderr, flush=True)
+                            log_debug("Detected boundary, starting token stream")
                             output_buffer = ""
                             started = True
                         continue
                         
                     if "[ Prompt:" in output_buffer:
-                        print("UTGPT_LOG: Detected '[ Prompt:' footer boundary", file=sys.stderr, flush=True)
+                        log_debug("Detected '[ Prompt:' footer boundary")
                         break
                         
                     if len(output_buffer) > 20:
@@ -1189,13 +1363,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     if not has_emitted_content:
                         remaining = remaining.lstrip()
                     if remaining:
-                        print("UTGPT_LOG: Emitting remaining buffer content: {0}".format(repr(remaining)), file=sys.stderr, flush=True)
+                        log_debug("Emitting remaining buffer content: {0}".format(repr(remaining)))
                         _emit_token(token_callback, remaining)
 
-            print("UTGPT_LOG: Waiting for process to exit", file=sys.stderr, flush=True)
+            log_debug("Waiting for process to exit")
             exit_code = process.wait()
             stderr_thread.join(timeout=1.0)
-            print("UTGPT_LOG: Process exited with code {0}".format(exit_code), file=sys.stderr, flush=True)
+            log_info("Process exited with code {0}".format(exit_code))
             if exit_code != 0:
                 error_msg = "".join(stderr_lines).strip()
                 if not error_msg:
@@ -1205,7 +1379,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             _emit_done(done_callback, ok=True, error_message="")
         except Exception as error:  # pragma: no cover - exercised from app runtime
-            print("UTGPT_LOG: Exception in run_inference: {0}".format(error), file=sys.stderr, flush=True)
+            log_error("Exception in run_inference: {0}".format(error))
             _terminate_process(process)
             _emit_done(done_callback, ok=False, error_message=str(error))
         finally:
@@ -1252,6 +1426,7 @@ def initialize():
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
-        "llamaCliPath": get_llama_cli_path()
+        "llamaCliPath": get_llama_cli_path(),
+        "debug": DEBUG_MODE
     }
 
