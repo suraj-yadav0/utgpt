@@ -118,10 +118,24 @@ Page {
         var lastIndex = messageModel.count - 1
         var currentText = messageModel.get(lastIndex).text
         if (currentText === "..." || currentText.startsWith("Thinking")) {
-            messageModel.setProperty(lastIndex, "text", chunk)
-        } else {
-            messageModel.setProperty(lastIndex, "text", currentText + chunk)
+            currentText = ""
         }
+        var newText = currentText + chunk
+
+        // Format reasoning blocks cleanly for markdown/text display
+        newText = newText.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
+                         .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
+                         .replace(/<\|im_end\|>/gi, "")
+                         .replace(/<\/im_end>/gi, "")
+                         .replace(/<\|im_start\|>/gi, "")
+                         .replace(/<end_of_turn>/gi, "")
+                         .replace(/<start_of_turn>/gi, "")
+                         .replace(/<\|end\|>/gi, "")
+                         .replace(/<\|eot_id\|>/gi, "")
+                         .replace(/<\|start_header_id\|>/gi, "")
+                         .replace(/\[end of text\]/gi, "")
+
+        messageModel.setProperty(lastIndex, "text", newText)
         scrollToBottom()
     }
 

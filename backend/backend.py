@@ -85,7 +85,8 @@ DEFAULT_CATALOG = [
         "context": "8,192 tokens",
         "maxContext": 8192,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Fast general chat, low resource devices"
+        "usage": "Fast general chat, low resource devices",
+        "promptTemplate": "chatml"
     },
     {
         "name": "Qwen2.5-1.5B",
@@ -97,7 +98,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Excellent multilingual capabilities, coding & reasoning"
+        "usage": "Excellent multilingual capabilities, coding & reasoning",
+        "promptTemplate": "chatml"
     },
     {
         "name": "DeepSeek-R1-Distill-Qwen-1.5B",
@@ -109,7 +111,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Distilled reasoning model, thinking step visualization, math/logic"
+        "usage": "Distilled reasoning model, thinking step visualization, math/logic",
+        "promptTemplate": "chatml"
     },
     {
         "name": "Llama-3.2-1B",
@@ -121,7 +124,8 @@ DEFAULT_CATALOG = [
         "context": "128,000 tokens",
         "maxContext": 128000,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Ultra-fast assistant, agentic tasks, long contexts"
+        "usage": "Ultra-fast assistant, agentic tasks, long contexts",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Llama-3.2-3B",
@@ -133,7 +137,8 @@ DEFAULT_CATALOG = [
         "context": "128,000 tokens",
         "maxContext": 128000,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Smart general assistant, high quality logic & reasoning"
+        "usage": "Smart general assistant, high quality logic & reasoning",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Gemma-2-2B",
@@ -145,7 +150,8 @@ DEFAULT_CATALOG = [
         "context": "8,192 tokens",
         "maxContext": 8192,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Lightweight high-quality chatting, instruction following"
+        "usage": "Lightweight high-quality chatting, instruction following",
+        "promptTemplate": "gemma"
     },
     {
         "name": "Phi-3-mini-4K",
@@ -157,7 +163,8 @@ DEFAULT_CATALOG = [
         "context": "4,096 tokens",
         "maxContext": 4096,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Reasoning, logical tasks, math and coding"
+        "usage": "Reasoning, logical tasks, math and coding",
+        "promptTemplate": "phi3"
     },
     {
         "name": "Granite-3.0-2B-Instruct",
@@ -169,7 +176,8 @@ DEFAULT_CATALOG = [
         "context": "4,096 tokens",
         "maxContext": 4096,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Enterprise tasks, translation, coding"
+        "usage": "Enterprise tasks, translation, coding",
+        "promptTemplate": "llama3"
     },
     {
         "name": "Qwen2.5-0.5B",
@@ -181,7 +189,8 @@ DEFAULT_CATALOG = [
         "context": "32,768 tokens",
         "maxContext": 32768,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage"
+        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage",
+        "promptTemplate": "chatml"
     },
     {
         "name": "TinyLlama-1.1B",
@@ -193,7 +202,8 @@ DEFAULT_CATALOG = [
         "context": "2,048 tokens",
         "maxContext": 2048,
         "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely fast, simple chats on low-spec hardware"
+        "usage": "Extremely fast, simple chats on low-spec hardware",
+        "promptTemplate": "zephyr"
     }
 ]
 
@@ -895,27 +905,95 @@ def retrieve_relevant_context(query, exclude_texts, limit=3):
     
     return [{"role": m["role"], "text": m["text"]} for m in relevant_msgs]
 
+def get_model_metadata(model_filename):
+    # Try local models.json first
+    try:
+        models_json_path = os.path.join(APP_DIR, "assets", "models.json")
+        if os.path.exists(models_json_path):
+            with open(models_json_path, "r") as f:
+                catalog = json.load(f)
+                for item in catalog:
+                    if item.get("filename") == model_filename:
+                        return item
+    except Exception:
+        pass
+
+    # Fallback to DEFAULT_CATALOG
+    for item in DEFAULT_CATALOG:
+        if item.get("filename") == model_filename:
+            return item
+
+    return None
+
 def get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs):
     """
     Formats the conversation prompt using model-specific templates,
     integrating retrieved relevant history context (RAG) in the system prompt.
+    Includes context window budgeting to prevent leakage and out-of-token crashes.
     """
     model_lower = model_filename.lower()
+    metadata = get_model_metadata(model_filename)
     
-    context_str = ""
-    if context_msgs:
-        context_str = "Relevant context from previous conversations:\n"
-        for msg in context_msgs:
-            role_name = "User" if msg["role"] == "user" else "Assistant"
-            context_str += f"- {role_name}: {msg['text']}\n"
+    max_context = 2048
+    template_type = None
+    if metadata:
+        max_context = metadata.get("maxContext", 2048)
+        template_type = metadata.get("promptTemplate")
 
-    # 1. Llama-3 / Llama-3.2 / Granite
-    if "llama-3" in model_lower or "granite" in model_lower:
+    if not template_type:
+        if "llama-3" in model_lower or "granite" in model_lower:
+            template_type = "llama3"
+        elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
+            template_type = "chatml"
+        elif "gemma" in model_lower:
+            template_type = "gemma"
+        elif "phi-3" in model_lower:
+            template_type = "phi3"
+        elif "tinyllama" in model_lower:
+            template_type = "zephyr"
+        else:
+            template_type = "default"
+
+    # Context budgeting: reserve 25% of context window for generation
+    safe_token_budget = int(max_context * 0.75)
+    query_tokens = len(current_query) // 4
+    
+    allowed_recent_history = []
+    allowed_context_msgs = []
+    current_tokens = query_tokens + 50  # buffer for system prompt structure
+
+    # 1. Budget recent chat history first (newest to oldest)
+    for msg in reversed(recent_history):
+        content = msg.get("content", "")
+        msg_tok = len(content) // 4
+        if current_tokens + msg_tok < safe_token_budget:
+            allowed_recent_history.insert(0, msg)
+            current_tokens += msg_tok
+
+    # 2. Budget RAG context next
+    for msg in context_msgs:
+        text = msg.get("text", "")
+        msg_tok = len(text) // 4
+        if current_tokens + msg_tok < safe_token_budget:
+            allowed_context_msgs.append(msg)
+            current_tokens += msg_tok
+
+    context_str = ""
+    if allowed_context_msgs:
+        context_str = "Relevant facts and details from previous conversations:\n"
+        for msg in allowed_context_msgs:
+            # Strip any trailing newlines from stored messages to keep formatting clean
+            text_cleaned = msg.get("text", "").strip()
+            if text_cleaned:
+                context_str += f"- {text_cleaned}\n"
+
+    # Format using resolved template_type
+    if template_type == "llama3":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n\n{context_str}"
         prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
@@ -923,13 +1001,12 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
         return prompt, "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
-    # 2. Qwen2.5 / DeepSeek-R1-Distill-Qwen / SmolLM2 / TinyLlama
-    elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower or "tinyllama" in model_lower:
+    elif template_type == "chatml":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n\n{context_str}"
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
@@ -937,14 +1014,26 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         prompt += "<|im_start|>assistant\n"
         return prompt, "<|im_start|>assistant\n"
 
-    # 3. Gemma-2
-    elif "gemma" in model_lower:
+    elif template_type == "zephyr":
+        system_content = "You are a helpful assistant."
+        if context_str:
+            system_content += f"\n\n{context_str}"
+        prompt = f"<|system|>\n{system_content}</s>\n"
+        for msg in allowed_recent_history:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            prompt += f"<|{role}|>\n{content}</s>\n"
+        prompt += f"<|user|>\n{current_query}</s>\n"
+        prompt += "<|assistant|>\n"
+        return prompt, "<|assistant|>\n"
+
+    elif template_type == "gemma":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n{context_str}"
         prompt = "<bos>"
         prompt += f"<start_of_turn>system\n{system_content}<end_of_turn>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
@@ -952,14 +1041,13 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         prompt += "<start_of_turn>assistant\n"
         return prompt, "<start_of_turn>assistant\n"
 
-    # 4. Phi-3
-    elif "phi-3" in model_lower:
+    elif template_type == "phi3":
         system_content = "You are a helpful assistant."
         if context_str:
             system_content += f"\n{context_str}"
         prompt = "<s>"
         prompt += f"<|system|>\n{system_content}<|end|>\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|{role}|>\n{content}<|end|>\n"
@@ -967,12 +1055,11 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         prompt += "<|assistant|>\n"
         return prompt, "<|assistant|>\n"
 
-    # 5. Default Fallback
     else:
         prompt = ""
         if context_str:
             prompt += f"System: {context_str}\n"
-        for msg in recent_history:
+        for msg in allowed_recent_history:
             role = msg.get("role", "user").capitalize()
             content = msg.get("content", "")
             prompt += f"{role}: {content}\n"
@@ -1046,13 +1133,45 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         try:
             is_completion = "llama-completion" in cli_path
             print("UTGPT_LOG: Launching inference engine: {0}".format(cli_path), file=sys.stderr, flush=True)
-            
+
+            # Determine template type to pass correct reverse prompts/stop tokens
+            metadata = get_model_metadata(model_filename)
+            template_type = None
+            if metadata:
+                template_type = metadata.get("promptTemplate")
+            if not template_type:
+                model_lower = model_filename.lower()
+                if "llama-3" in model_lower or "granite" in model_lower:
+                    template_type = "llama3"
+                elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
+                    template_type = "chatml"
+                elif "gemma" in model_lower:
+                    template_type = "gemma"
+                elif "phi-3" in model_lower:
+                    template_type = "phi3"
+                elif "tinyllama" in model_lower:
+                    template_type = "zephyr"
+
+            stop_tokens = []
+            if template_type == "llama3":
+                stop_tokens = ["<|eot_id|>", "<|start_header_id|>"]
+            elif template_type == "chatml":
+                stop_tokens = ["<|im_end|>", "<|im_start|>", "</im_end>"]
+            elif template_type == "zephyr":
+                stop_tokens = ["</s>", "<|user|>"]
+            elif template_type == "gemma":
+                stop_tokens = ["<end_of_turn>", "<start_of_turn>"]
+            elif template_type == "phi3":
+                stop_tokens = ["<|end|>", "<|user|>"]
+
             additional_args = [
                 "-t", str(int(threads)),
                 "-tb", str(int(threads)),
                 "-c", str(int(ctx_size)),
                 "-fa", str(flash_attn)
             ]
+            for token in stop_tokens:
+                additional_args.extend(["-r", token])
             
             if is_completion:
                 args = [
