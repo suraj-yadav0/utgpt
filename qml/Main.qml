@@ -160,6 +160,13 @@ MainView {
             root.showError(traceback)
         }
 
+        onReceived: function(result) {
+            var data = (result && result.length > 0) ? result[0] : null
+            if (data && data.event === "catalog_updated") {
+                root.modelCatalog = data.payload
+            }
+        }
+
         Component.onCompleted: {
             addImportPath(Qt.resolvedUrl("../backend"))
             importModule("backend", function() {

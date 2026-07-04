@@ -267,8 +267,48 @@ def get_model_compatibility(size_str, ram_gb):
             return "red"
 
 def fetch_model_catalog():
-    url = "https://raw.githubusercontent.com/surajyadav0/utgpt/main/assets/models.json"
+    """
+    Returns the locally cached catalog or falls back to DEFAULT_CATALOG.
+    Starts a background thread to fetch the latest catalog from GitHub.
+    """
     ram_gb = get_total_ram_gb()
+    cache_path = os.path.join(MODELS_DIR, "catalog.json")
+    catalog_data = []
+
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                catalog_data = json.load(f)
+        except Exception as e:
+            log_error("Failed to load cached catalog: " + str(e))
+
+    if not isinstance(catalog_data, list) or len(catalog_data) == 0:
+        catalog_data = [item.copy() for item in DEFAULT_CATALOG]
+
+    # Process compatibility for the immediate return
+    for item in catalog_data:
+        size_str = item.get("size", "1.5 GB")
+        compat = get_model_compatibility(size_str, ram_gb)
+        item["compatibility"] = compat
+        if compat == "green":
+            item["compatibilityText"] = "Highly Recommended"
+        elif compat == "yellow":
+            item["compatibilityText"] = "Runs Fine"
+        else:
+            item["compatibilityText"] = "Heavy (May lag/crash)"
+
+    # Spawn background thread to fetch from Github without blocking PyOtherSide
+    threading.Thread(target=_bg_fetch_catalog, args=(ram_gb,), daemon=True).start()
+
+    return catalog_data
+
+
+def _bg_fetch_catalog(ram_gb):
+    """
+    Background worker thread to pull model catalog from github,
+    save it locally, and send a PyOtherSide event to refresh the UI.
+    """
+    url = "https://raw.githubusercontent.com/suraj-yadav0/utgpt/main/assets/models.json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=10) as response:
@@ -286,25 +326,17 @@ def fetch_model_catalog():
                             item["compatibilityText"] = "Runs Fine"
                         else:
                             item["compatibilityText"] = "Heavy (May lag/crash)"
-                    return data
+
+                    _ensure_models_dir()
+                    cache_path = os.path.join(MODELS_DIR, "catalog.json")
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4)
+
+                    if pyotherside:
+                        pyotherside.send({"event": "catalog_updated", "payload": data})
+                    log_info("Successfully updated remote model catalog and notified frontend.")
     except Exception as e:
-        log_error("Failed to fetch remote model catalog, using fallback: " + str(e))
-    
-    # Process fallbacks
-    data = []
-    for item in DEFAULT_CATALOG:
-        item_copy = item.copy()
-        size_str = item_copy.get("size", "1.5 GB")
-        compat = get_model_compatibility(size_str, ram_gb)
-        item_copy["compatibility"] = compat
-        if compat == "green":
-            item_copy["compatibilityText"] = "Highly Recommended"
-        elif compat == "yellow":
-            item_copy["compatibilityText"] = "Runs Fine"
-        else:
-            item_copy["compatibilityText"] = "Heavy (May lag/crash)"
-        data.append(item_copy)
-    return data
+        log_error("Failed to fetch remote model catalog in background: " + str(e))
 
 
 def _ensure_models_dir():
