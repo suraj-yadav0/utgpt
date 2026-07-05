@@ -678,16 +678,30 @@ def ensure_llama_cli():
     if not target_arch:
         target_arch = "arm64" if "arm" in machine or "aarch" in machine else "x64"
         
-    tag = "b9555"
+    tag = "b9874"
     try:
         import json
-        req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", headers={"User-Agent": "UTGPT/0.1"})
+        req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5", headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode())
-            if "tag_name" in data:
-                tag = data["tag_name"]
-    except Exception:
-        pass
+            releases = json.loads(response.read().decode())
+            expected_asset_suffix = f"-bin-ubuntu-{target_arch}.tar.gz"
+            found_tag = None
+            for release in releases:
+                r_tag = release.get("tag_name")
+                if not r_tag:
+                    continue
+                assets = release.get("assets", [])
+                expected_asset_name = f"llama-{r_tag}{expected_asset_suffix}"
+                if any(asset.get("name") == expected_asset_name for asset in assets):
+                    found_tag = r_tag
+                    break
+            if found_tag:
+                tag = found_tag
+                log_info("Resolved latest llama.cpp release tag to: {0}".format(tag))
+            else:
+                log_info("No release with valid asset found in latest releases, using fallback tag: {0}".format(tag))
+    except Exception as e:
+        log_error("Error fetching latest release from GitHub API: {0}. Using fallback tag: {1}".format(e, tag))
         
     url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
     
