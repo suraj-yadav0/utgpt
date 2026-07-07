@@ -153,6 +153,10 @@ MainView {
         PopupUtils.open(errorDialogComponent, root, { "message": message })
     }
 
+    function showNotification(title, message) {
+        PopupUtils.open(notificationDialogComponent, root, { "title": title, "message": message })
+    }
+
     Python {
         id: python
 
@@ -192,6 +196,26 @@ MainView {
             property string message: ""
 
             title: i18n.tr("Backend Error")
+
+            Label {
+                width: parent ? parent.width : undefined
+                wrapMode: Text.Wrap
+                text: dialog.message
+            }
+
+            Button {
+                text: i18n.tr("OK")
+                onClicked: PopupUtils.close(dialog)
+            }
+        }
+    }
+
+    Component {
+        id: notificationDialogComponent
+
+        Dialog {
+            id: dialog
+            property string message: ""
 
             Label {
                 width: parent ? parent.width : undefined

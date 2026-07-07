@@ -1454,6 +1454,99 @@ def stop_all_inference():
         _terminate_process(process)
 
 
+def import_local_model_thread(file_url, request_id):
+    try:
+        import urllib.parse
+        from urllib.request import url2pathname
+
+        if file_url.startswith("file://"):
+            parsed = urllib.parse.urlparse(file_url)
+            source_path = url2pathname(parsed.path)
+        else:
+            source_path = file_url
+
+        if not os.path.exists(source_path):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Source file does not exist"
+            })
+            return
+
+        if not source_path.lower().endswith(".gguf"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Only .gguf files are supported"
+            })
+            return
+
+        filename = os.path.basename(source_path)
+        dest_dir = _ensure_models_dir()
+        dest_path = os.path.join(dest_dir, filename)
+
+        if os.path.exists(dest_path):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Model with this filename already exists in application storage"
+            })
+            return
+
+        total_size = os.path.getsize(source_path)
+        bytes_copied = 0
+        chunk_size = 4 * 1024 * 1024  # 4MB chunks
+
+        _send_event("import_start", {
+            "requestId": request_id,
+            "filename": filename,
+            "totalSize": total_size
+        })
+
+        with open(source_path, "rb") as fsrc:
+            with open(dest_path, "wb") as fdst:
+                while True:
+                    chunk = fsrc.read(chunk_size)
+                    if not chunk:
+                        break
+                    fdst.write(chunk)
+                    bytes_copied += len(chunk)
+                    progress = int((bytes_copied / total_size) * 100) if total_size > 0 else 0
+                    _send_event("import_progress", {
+                        "requestId": request_id,
+                        "filename": filename,
+                        "progress": progress
+                    })
+
+        # Cleanup if the file is in incoming/temp directory (from Content Hub)
+        is_incoming = "incoming" in source_path or "/tmp/" in source_path
+        if is_incoming:
+            try:
+                os.remove(source_path)
+            except OSError:
+                pass
+
+        _send_event("import_complete", {
+            "requestId": request_id,
+            "filename": filename
+        })
+
+    except Exception as e:
+        log_error("Error importing model: " + str(e))
+        _send_event("import_error", {
+            "requestId": request_id,
+            "error": str(e)
+        })
+
+
+def import_local_model(file_url):
+    request_id = "import-" + str(int(time.time()))
+    thread = threading.Thread(
+        target=import_local_model_thread,
+        args=(file_url, request_id),
+        daemon=True
+    )
+    thread.start()
+    return request_id
+
+
 def initialize():
     _ensure_models_dir()
     init_db()
