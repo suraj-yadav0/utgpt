@@ -6,16 +6,18 @@
  */
 
 import QtQuick 2.7
-import Lomiri.Content 1.1
+import Lomiri.Content 1.3
 
 Item {
     id: pickerItem
+    anchors.fill: parent
     signal fileSelected(string fileUrl)
 
     property var activeTransfer: null
 
     ContentPeerPicker {
         id: peerPicker
+        anchors.fill: parent
         contentType: ContentType.Documents
         handler: ContentHandler.Source
         visible: false

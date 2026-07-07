@@ -581,6 +581,7 @@ Page {
 
     Loader {
         id: pickerLoader
+        anchors.fill: parent
         onStatusChanged: {
             if (status === Loader.Error) {
                 if (source.toString().indexOf("LomiriFilePicker.qml") >= 0) {
