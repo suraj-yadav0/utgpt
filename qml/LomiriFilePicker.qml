@@ -16,7 +16,7 @@ Item {
 
     ContentPeerPicker {
         id: peerPicker
-        contentType: ContentType.All
+        contentType: ContentType.Documents
         handler: ContentHandler.Source
         visible: false
 

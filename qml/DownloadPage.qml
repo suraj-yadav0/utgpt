@@ -398,8 +398,8 @@ Page {
 
             delegate: ListItem {
                 id: modelListItem
-                width: modelsListView.width
-                height: cardLayout.implicitHeight + units.gu(4.0)
+                width: downloadPage.width
+                implicitHeight: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
                 divider.visible: true
 
@@ -467,12 +467,9 @@ Page {
 
                 RowLayout {
                     id: cardLayout
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.leftMargin: units.gu(1.5)
-                    anchors.rightMargin: units.gu(1.5)
-                    anchors.topMargin: units.gu(2.0)
+                    x: units.gu(1.5)
+                    y: units.gu(2.0)
+                    width: downloadPage.width - units.gu(3.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
