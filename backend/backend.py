@@ -443,7 +443,7 @@ def list_models():
 
     entries = []
     for filename in os.listdir(models_dir):
-        if filename.lower().endswith(".gguf"):
+        if filename.lower().endswith(".gguf") and not filename.lower().startswith("mmproj"):
             entries.append(filename)
     entries.sort()
     return entries
@@ -1480,6 +1480,12 @@ def import_local_model_thread(file_url, request_id):
             return
 
         filename = os.path.basename(source_path)
+        if filename.lower().startswith("mmproj"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Multimodal projector files (mmproj-*.gguf) cannot be loaded as standalone language models. Please download an instruct or chat model."
+            })
+            return
         dest_dir = _ensure_models_dir()
         dest_path = os.path.join(dest_dir, filename)
 
