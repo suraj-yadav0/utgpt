@@ -657,6 +657,7 @@ def get_download_states():
 
 LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
+LLAMA_CLI_DOWNLOADING = False
 
 def ensure_llama_cli():
     cli_path = get_llama_cli_path()
@@ -743,7 +744,9 @@ def ensure_llama_cli():
     return False
 
 def download_llama_cli_in_background():
-    global LLAMA_CLI_READY, LLAMA_CLI_ERROR
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    LLAMA_CLI_DOWNLOADING = True
+    LLAMA_CLI_ERROR = None
     try:
         if ensure_llama_cli():
             LLAMA_CLI_READY = True
@@ -752,6 +755,40 @@ def download_llama_cli_in_background():
                 LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
     except Exception as e:
         LLAMA_CLI_ERROR = str(e)
+    finally:
+        LLAMA_CLI_DOWNLOADING = False
+
+def start_inference_engine_download():
+    global LLAMA_CLI_READY, LLAMA_CLI_DOWNLOADING
+    if LLAMA_CLI_DOWNLOADING:
+        return False
+    if LLAMA_CLI_READY:
+        return True
+    thread = threading.Thread(target=download_llama_cli_in_background)
+    thread.daemon = True
+    thread.start()
+    return True
+
+def get_inference_engine_status():
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
+        LLAMA_CLI_READY = True
+        status = "ready"
+        err_msg = ""
+    elif LLAMA_CLI_DOWNLOADING:
+        status = "downloading"
+        err_msg = ""
+    else:
+        status = "error" if LLAMA_CLI_ERROR else "not_started"
+        err_msg = str(LLAMA_CLI_ERROR) if LLAMA_CLI_ERROR else ""
+        
+    return {
+        "status": status,
+        "error": err_msg
+    }
 
 def delete_model(filename):
     models_dir = _ensure_models_dir()
@@ -1217,10 +1254,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
     cli_path = get_llama_completion_path() if os.path.exists(get_llama_completion_path()) else get_llama_cli_path()
     if not os.path.exists(cli_path):
+        global LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
         if LLAMA_CLI_ERROR:
             error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
-        else:
+        elif LLAMA_CLI_DOWNLOADING:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
+        else:
+            error_msg = "Inference engine has not been downloaded yet. Please go to Settings to download it."
         log_error("inference engine not found: {0}".format(error_msg))
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
@@ -1570,14 +1610,12 @@ def initialize():
         LLAMA_CLI_READY = True
     else:
         LLAMA_CLI_READY = False
-        thread = threading.Thread(target=download_llama_cli_in_background)
-        thread.daemon = True
-        thread.start()
         
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
+        "llamaCliReady": LLAMA_CLI_READY,
         "debug": DEBUG_MODE
     }
 
