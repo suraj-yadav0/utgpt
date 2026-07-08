@@ -296,7 +296,7 @@ Page {
             Layout.fillWidth: true
             Layout.leftMargin: units.gu(1.5)
             Layout.rightMargin: units.gu(1.5)
-            Layout.preferredHeight: units.gu(9.5)
+            Layout.preferredHeight: units.gu(12.5)
             color: "#F8FAFC"
             border.color: "#E2E8F0"
             border.width: 1
@@ -318,7 +318,7 @@ Page {
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: units.gu(0.2)
+                    spacing: units.gu(0.5)
                     Layout.alignment: Qt.AlignVCenter
 
                     Label {
@@ -332,6 +332,26 @@ Page {
                         fontSize: "small"
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        spacing: units.gu(0.5)
+                        Layout.fillWidth: true
+                        Icon {
+                            name: "info"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: "#D97706"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Label {
+                            text: i18n.tr("Use Instruct/Chat models. Avoid Base/autocompletion models.")
+                            color: "#D97706"
+                            fontSize: "x-small"
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
                     }
                 }
 

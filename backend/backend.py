@@ -1018,7 +1018,9 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         template_type = metadata.get("promptTemplate")
 
     if not template_type:
-        if "llama-3" in model_lower or "granite" in model_lower:
+        if "base" in model_lower:
+            template_type = "default"
+        elif "llama-3" in model_lower or "granite" in model_lower:
             template_type = "llama3"
         elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
             template_type = "chatml"
@@ -1236,7 +1238,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 template_type = metadata.get("promptTemplate")
             if not template_type:
                 model_lower = model_filename.lower()
-                if "llama-3" in model_lower or "granite" in model_lower:
+                if "base" in model_lower:
+                    template_type = "default"
+                elif "llama-3" in model_lower or "granite" in model_lower:
                     template_type = "llama3"
                 elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
                     template_type = "chatml"
@@ -1258,6 +1262,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 stop_tokens = ["<end_of_turn>", "<start_of_turn>"]
             elif template_type == "phi3":
                 stop_tokens = ["<|end|>", "<|user|>"]
+            elif template_type == "default":
+                stop_tokens = ["\nUser:", "\nAssistant:", "\nSystem:"]
 
             additional_args = [
                 "-t", str(int(threads)),
