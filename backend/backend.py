@@ -443,7 +443,7 @@ def list_models():
 
     entries = []
     for filename in os.listdir(models_dir):
-        if filename.lower().endswith(".gguf"):
+        if filename.lower().endswith(".gguf") and not filename.lower().startswith("mmproj"):
             entries.append(filename)
     entries.sort()
     return entries
@@ -657,6 +657,7 @@ def get_download_states():
 
 LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
+LLAMA_CLI_DOWNLOADING = False
 
 def ensure_llama_cli():
     cli_path = get_llama_cli_path()
@@ -743,7 +744,9 @@ def ensure_llama_cli():
     return False
 
 def download_llama_cli_in_background():
-    global LLAMA_CLI_READY, LLAMA_CLI_ERROR
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    LLAMA_CLI_DOWNLOADING = True
+    LLAMA_CLI_ERROR = None
     try:
         if ensure_llama_cli():
             LLAMA_CLI_READY = True
@@ -752,6 +755,40 @@ def download_llama_cli_in_background():
                 LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
     except Exception as e:
         LLAMA_CLI_ERROR = str(e)
+    finally:
+        LLAMA_CLI_DOWNLOADING = False
+
+def start_inference_engine_download():
+    global LLAMA_CLI_READY, LLAMA_CLI_DOWNLOADING
+    if LLAMA_CLI_DOWNLOADING:
+        return False
+    if LLAMA_CLI_READY:
+        return True
+    thread = threading.Thread(target=download_llama_cli_in_background)
+    thread.daemon = True
+    thread.start()
+    return True
+
+def get_inference_engine_status():
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
+        LLAMA_CLI_READY = True
+        status = "ready"
+        err_msg = ""
+    elif LLAMA_CLI_DOWNLOADING:
+        status = "downloading"
+        err_msg = ""
+    else:
+        status = "error" if LLAMA_CLI_ERROR else "not_started"
+        err_msg = str(LLAMA_CLI_ERROR) if LLAMA_CLI_ERROR else ""
+        
+    return {
+        "status": status,
+        "error": err_msg
+    }
 
 def delete_model(filename):
     models_dir = _ensure_models_dir()
@@ -1018,7 +1055,9 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         template_type = metadata.get("promptTemplate")
 
     if not template_type:
-        if "llama-3" in model_lower or "granite" in model_lower:
+        if "base" in model_lower:
+            template_type = "default"
+        elif "llama-3" in model_lower or "granite" in model_lower:
             template_type = "llama3"
         elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
             template_type = "chatml"
@@ -1215,10 +1254,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
     cli_path = get_llama_completion_path() if os.path.exists(get_llama_completion_path()) else get_llama_cli_path()
     if not os.path.exists(cli_path):
+        global LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
         if LLAMA_CLI_ERROR:
             error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
-        else:
+        elif LLAMA_CLI_DOWNLOADING:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
+        else:
+            error_msg = "Inference engine has not been downloaded yet. Please go to Settings to download it."
         log_error("inference engine not found: {0}".format(error_msg))
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
@@ -1236,7 +1278,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 template_type = metadata.get("promptTemplate")
             if not template_type:
                 model_lower = model_filename.lower()
-                if "llama-3" in model_lower or "granite" in model_lower:
+                if "base" in model_lower:
+                    template_type = "default"
+                elif "llama-3" in model_lower or "granite" in model_lower:
                     template_type = "llama3"
                 elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
                     template_type = "chatml"
@@ -1258,6 +1302,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 stop_tokens = ["<end_of_turn>", "<start_of_turn>"]
             elif template_type == "phi3":
                 stop_tokens = ["<|end|>", "<|user|>"]
+            elif template_type == "default":
+                stop_tokens = ["\nUser:", "\nAssistant:", "\nSystem:"]
 
             additional_args = [
                 "-t", str(int(threads)),
@@ -1454,6 +1500,105 @@ def stop_all_inference():
         _terminate_process(process)
 
 
+def import_local_model_thread(file_url, request_id):
+    try:
+        import urllib.parse
+        from urllib.request import url2pathname
+
+        if file_url.startswith("file://"):
+            parsed = urllib.parse.urlparse(file_url)
+            source_path = url2pathname(parsed.path)
+        else:
+            source_path = file_url
+
+        if not os.path.exists(source_path):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Source file does not exist"
+            })
+            return
+
+        if not source_path.lower().endswith(".gguf"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Only .gguf files are supported"
+            })
+            return
+
+        filename = os.path.basename(source_path)
+        if filename.lower().startswith("mmproj"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Multimodal projector files (mmproj-*.gguf) cannot be loaded as standalone language models. Please download an instruct or chat model."
+            })
+            return
+        dest_dir = _ensure_models_dir()
+        dest_path = os.path.join(dest_dir, filename)
+
+        if os.path.exists(dest_path):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Model with this filename already exists in application storage"
+            })
+            return
+
+        total_size = os.path.getsize(source_path)
+        bytes_copied = 0
+        chunk_size = 4 * 1024 * 1024  # 4MB chunks
+
+        _send_event("import_start", {
+            "requestId": request_id,
+            "filename": filename,
+            "totalSize": total_size
+        })
+
+        with open(source_path, "rb") as fsrc:
+            with open(dest_path, "wb") as fdst:
+                while True:
+                    chunk = fsrc.read(chunk_size)
+                    if not chunk:
+                        break
+                    fdst.write(chunk)
+                    bytes_copied += len(chunk)
+                    progress = int((bytes_copied / total_size) * 100) if total_size > 0 else 0
+                    _send_event("import_progress", {
+                        "requestId": request_id,
+                        "filename": filename,
+                        "progress": progress
+                    })
+
+        # Cleanup if the file is in incoming/temp directory (from Content Hub)
+        is_incoming = "incoming" in source_path or "/tmp/" in source_path
+        if is_incoming:
+            try:
+                os.remove(source_path)
+            except OSError:
+                pass
+
+        _send_event("import_complete", {
+            "requestId": request_id,
+            "filename": filename
+        })
+
+    except Exception as e:
+        log_error("Error importing model: " + str(e))
+        _send_event("import_error", {
+            "requestId": request_id,
+            "error": str(e)
+        })
+
+
+def import_local_model(file_url):
+    request_id = "import-" + str(int(time.time()))
+    thread = threading.Thread(
+        target=import_local_model_thread,
+        args=(file_url, request_id),
+        daemon=True
+    )
+    thread.start()
+    return request_id
+
+
 def initialize():
     _ensure_models_dir()
     init_db()
@@ -1465,14 +1610,12 @@ def initialize():
         LLAMA_CLI_READY = True
     else:
         LLAMA_CLI_READY = False
-        thread = threading.Thread(target=download_llama_cli_in_background)
-        thread.daemon = True
-        thread.start()
         
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
+        "llamaCliReady": LLAMA_CLI_READY,
         "debug": DEBUG_MODE
     }
 

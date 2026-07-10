@@ -40,6 +40,8 @@ Page {
     property var python
     property bool backendReady: false
     property string selectedModel: ""
+    property string engineStatus: "checking"
+    property string engineError: ""
     
     onSelectedModelChanged: {
         var info = getModelInfo(selectedModel)
@@ -68,6 +70,24 @@ Page {
         python.call("backend.get_free_storage", [], function(result) {
             freeStorage = result || i18n.tr("Storage unavailable")
         })
+    }
+
+    function refreshEngineStatus() {
+        if (!backendReady) return;
+        python.call("backend.get_inference_engine_status", [], function(result) {
+            if (result) {
+                engineStatus = result.status
+                engineError = result.error
+            }
+        })
+    }
+
+    Timer {
+        id: statusTimer
+        interval: 1000
+        repeat: true
+        running: engineStatus === "downloading"
+        onTriggered: refreshEngineStatus()
     }
 
     function snapTemperature(value) {
@@ -187,6 +207,7 @@ Page {
         if (backendReady) {
             refreshModels()
             refreshStorage()
+            refreshEngineStatus()
         }
     }
 
@@ -194,6 +215,7 @@ Page {
         if (visible && backendReady) {
             refreshModels()
             refreshStorage()
+            refreshEngineStatus()
         }
     }
 
@@ -369,8 +391,92 @@ Page {
                             color: "#1E293B"
                             fontSize: "small"
                             wrapMode: Text.Wrap
-                            Layout.fillWidth: true
                         }
+                    }
+                }
+            }
+
+            // Card: Inference Engine Status
+            Rectangle {
+                width: parent.width
+                height: engineStatusColumn.implicitHeight + units.gu(3)
+                color: "#FFFFFF"
+                border.color: "#E2E8F0"
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: engineStatusColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Inference Engine")
+                        font.bold: true
+                        color: "#1E293B"
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: units.gu(1)
+
+                        Rectangle {
+                            width: units.gu(1.2)
+                            height: units.gu(1.2)
+                            radius: height / 2
+                            color: engineStatus === "ready" ? "#22C55E" : (engineStatus === "downloading" ? "#3B82F6" : "#EF4444")
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: {
+                                if (engineStatus === "ready") return i18n.tr("Ready");
+                                if (engineStatus === "downloading") return i18n.tr("Downloading...");
+                                if (engineStatus === "error") return i18n.tr("Error");
+                                return i18n.tr("Not Downloaded");
+                            }
+                            font.bold: true
+                            color: "#475569"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Button {
+                            text: engineStatus === "error" ? i18n.tr("Retry") : i18n.tr("Download")
+                            visible: engineStatus !== "ready" && engineStatus !== "downloading"
+                            color: root.themeColor
+                            onClicked: {
+                                python.call("backend.start_inference_engine_download", [], function(success) {
+                                    refreshEngineStatus()
+                                })
+                            }
+                        }
+                        
+                        ActivityIndicator {
+                            running: engineStatus === "downloading"
+                            visible: engineStatus === "downloading"
+                            width: units.gu(2)
+                            height: units.gu(2)
+                        }
+                    }
+
+                    Label {
+                        text: engineError
+                        color: "#EF4444"
+                        fontSize: "small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
+                        visible: engineStatus === "error" && engineError !== ""
+                    }
+
+                    Label {
+                        text: i18n.tr("Required to run local .gguf models on your device.")
+                        color: "#64748B"
+                        fontSize: "x-small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
+                        visible: engineStatus !== "ready"
                     }
                 }
             }

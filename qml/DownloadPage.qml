@@ -139,6 +139,10 @@ Page {
         })
     }
 
+    function importModel(fileUrl) {
+        python.call("backend.import_local_model", [fileUrl])
+    }
+
 
     ListModel {
         id: modelsList
@@ -155,6 +159,28 @@ Page {
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null
             if (!data || !data.event || !data.payload) {
+                return
+            }
+
+            if (data.event === "import_start") {
+                importOverlay.visible = true
+                importFilenameLabel.text = data.payload.filename
+                importProgressBar.value = 0
+                importProgressLabel.text = "0%"
+                return
+            } else if (data.event === "import_progress") {
+                importOverlay.visible = true
+                importProgressBar.value = data.payload.progress
+                importProgressLabel.text = data.payload.progress + "%"
+                return
+            } else if (data.event === "import_complete") {
+                importOverlay.visible = false
+                root.refreshModels()
+                root.showNotification(i18n.tr("Import Successful"), i18n.tr("Successfully imported ") + data.payload.filename + i18n.tr(". You can now select it as the Active Model in Settings."))
+                return
+            } else if (data.event === "import_error") {
+                importOverlay.visible = false
+                root.showError(i18n.tr("Failed to import model: ") + data.payload.error)
                 return
             }
 
@@ -264,6 +290,86 @@ Page {
         anchors.topMargin: units.gu(1.5)
         spacing: units.gu(1.5)
 
+        // Import Local GGUF Card
+        Rectangle {
+            id: importLocalCard
+            Layout.fillWidth: true
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
+            Layout.preferredHeight: units.gu(12.5)
+            color: "#F8FAFC"
+            border.color: "#E2E8F0"
+            border.width: 1
+            radius: units.gu(1.5)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(2)
+                anchors.rightMargin: units.gu(2)
+                spacing: units.gu(1.5)
+
+                Icon {
+                    name: "document-open"
+                    width: units.gu(2.8)
+                    height: units.gu(2.8)
+                    color: root.themeColor
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: units.gu(0.5)
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Label {
+                        text: i18n.tr("Import Local Model")
+                        font.bold: true
+                        color: "#1E293B"
+                    }
+                    Label {
+                        text: i18n.tr("Load a .gguf file from your Downloads folder")
+                        color: "#64748B"
+                        fontSize: "small"
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        spacing: units.gu(0.5)
+                        Layout.fillWidth: true
+                        Icon {
+                            name: "info"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: "#D97706"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Label {
+                            text: i18n.tr("Use Instruct/Chat models. Avoid Base/autocompletion models.")
+                            color: "#D97706"
+                            fontSize: "x-small"
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+                }
+
+                Button {
+                    text: i18n.tr("Import GGUF")
+                    color: root.themeColor
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: {
+                        if (pickerLoader.item) {
+                            pickerLoader.item.open()
+                        } else {
+                            pickerLoader.source = "LomiriFilePicker.qml"
+                        }
+                    }
+                }
+            }
+        }
+
         // Search Bar Card
         Rectangle {
             id: searchBarCard
@@ -312,8 +418,8 @@ Page {
 
             delegate: ListItem {
                 id: modelListItem
-                width: modelsListView.width
-                height: cardLayout.implicitHeight + units.gu(4.0)
+                width: downloadPage.width
+                implicitHeight: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
                 divider.visible: true
 
@@ -381,12 +487,9 @@ Page {
 
                 RowLayout {
                     id: cardLayout
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.leftMargin: units.gu(1.5)
-                    anchors.rightMargin: units.gu(1.5)
-                    anchors.topMargin: units.gu(2.0)
+                    x: units.gu(1.5)
+                    y: units.gu(2.0)
+                    width: downloadPage.width - units.gu(3.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
@@ -494,5 +597,98 @@ Page {
                 }
             }
         }
+    }
+
+    Loader {
+        id: pickerLoader
+        anchors.fill: parent
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                if (source.toString().indexOf("LomiriFilePicker.qml") >= 0) {
+                    console.log("Failed to load Lomiri picker, trying Desktop picker...")
+                    source = "DesktopFilePicker.qml"
+                } else {
+                    console.log("Failed to load Desktop picker as well.")
+                }
+            }
+        }
+        
+        onLoaded: {
+            if (item) {
+                item.fileSelected.connect(function(fileUrl) {
+                    downloadPage.importModel(fileUrl)
+                })
+            }
+        }
+    }
+
+    // Import Progress Overlay
+    Rectangle {
+        id: importOverlay
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.5)
+        visible: false
+        z: 1000
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            onClicked: {}
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width - units.gu(8)
+            height: units.gu(18)
+            color: "#FFFFFF"
+            radius: units.gu(1.5)
+            border.color: "#E2E8F0"
+            border.width: 1
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: units.gu(2)
+                spacing: units.gu(1.5)
+
+                Label {
+                    text: i18n.tr("Importing Model...")
+                    font.bold: true
+                    fontSize: "large"
+                    color: "#1E293B"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Label {
+                    id: importFilenameLabel
+                    text: ""
+                    fontSize: "small"
+                    color: "#64748B"
+                    Layout.alignment: Qt.AlignHCenter
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                ProgressBar {
+                    id: importProgressBar
+                    Layout.fillWidth: true
+                    minimumValue: 0
+                    maximumValue: 100
+                    value: 0
+                }
+
+                Label {
+                    id: importProgressLabel
+                    text: "0%"
+                    color: "#475569"
+                    Layout.alignment: Qt.AlignHCenter
+                }
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        pickerLoader.source = "LomiriFilePicker.qml"
     }
 }

@@ -153,6 +153,22 @@ MainView {
         PopupUtils.open(errorDialogComponent, root, { "message": message })
     }
 
+    function showNotification(title, message) {
+        PopupUtils.open(notificationDialogComponent, root, { "title": title, "message": message })
+    }
+
+    function startInferenceEngineDownload() {
+        if (!backendReady) return;
+        python.call("backend.start_inference_engine_download", [], function(ok) {
+            if (ok) {
+                root.showNotification(i18n.tr("Download Started"), i18n.tr("The inference engine is downloading in the background. You can check the progress in Settings."))
+                if (settingsPage) {
+                    settingsPage.refreshEngineStatus()
+                }
+            }
+        })
+    }
+
     Python {
         id: python
 
@@ -173,6 +189,9 @@ MainView {
                 python.call("backend.initialize", [], function(result) {
                     if (result) {
                         root.debugMode = !!result.debug
+                        if (!result.llamaCliReady) {
+                            PopupUtils.open(downloadPromptDialogComponent, root)
+                        }
                     }
                     root.backendReady = true
                 })
@@ -202,6 +221,62 @@ MainView {
             Button {
                 text: i18n.tr("OK")
                 onClicked: PopupUtils.close(dialog)
+            }
+        }
+    }
+
+    Component {
+        id: notificationDialogComponent
+
+        Dialog {
+            id: dialog
+            property string message: ""
+
+            Label {
+                width: parent ? parent.width : undefined
+                wrapMode: Text.Wrap
+                text: dialog.message
+            }
+
+            Button {
+                text: i18n.tr("OK")
+                onClicked: PopupUtils.close(dialog)
+            }
+        }
+    }
+
+    Component {
+        id: downloadPromptDialogComponent
+
+        Dialog {
+            id: dialog
+            title: i18n.tr("Inference Engine Required")
+
+            Label {
+                width: parent ? parent.width : undefined
+                wrapMode: Text.Wrap
+                text: i18n.tr("UTGPT needs to download a 23MB inference engine to run models locally. Do you want to download now? (Wi-Fi recommended).")
+            }
+
+            RowLayout {
+                spacing: units.gu(1.5)
+                width: parent ? parent.width : undefined
+
+                Button {
+                    text: i18n.tr("Cancel")
+                    Layout.fillWidth: true
+                    onClicked: PopupUtils.close(dialog)
+                }
+
+                Button {
+                    text: i18n.tr("Download")
+                    color: root.themeColor
+                    Layout.fillWidth: true
+                    onClicked: {
+                        PopupUtils.close(dialog)
+                        root.startInferenceEngineDownload()
+                    }
+                }
             }
         }
     }
