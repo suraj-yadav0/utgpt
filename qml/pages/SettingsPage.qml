@@ -263,91 +263,78 @@ Page {
             spacing: units.gu(2)
 
             // MAIN SETTINGS LIST
-            Rectangle {
+            StyledListView {
                 id: listMenuContainer
                 width: parent.width
-                height: listMenuColumn.height
+                expandToContent: true
                 visible: settingsPage.currentSection === ""
-                color: root.cardColor
-                border.color: root.cardBorderColor
-                border.width: 1
-                radius: units.gu(1.5)
-                clip: true
 
-                Column {
-                    id: listMenuColumn
-                    width: parent.width
-                    spacing: 0
+                model: ListModel {
+                    ListElement { title: "Active Model"; icon: "message"; section: "model" }
+                    ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
+                    ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
+                    ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
+                    ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
+                }
 
-                    Repeater {
-                        model: ListModel {
-                            ListElement { title: "Active Model"; icon: "message"; section: "model" }
-                            ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
-                            ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
-                            ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
-                            ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
+                delegate: Item {
+                    width: listMenuContainer.width
+                    height: units.gu(7.5)
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : "transparent")
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        spacing: units.gu(2)
+
+                        Icon {
+                            name: model.icon
+                            width: units.gu(2.6)
+                            height: units.gu(2.6)
+                            color: root.themeTextColor
+                            Layout.alignment: Qt.AlignVCenter
                         }
 
-                        delegate: Item {
-                            width: listMenuColumn.width
-                            height: units.gu(7.5)
+                        Label {
+                            text: i18n.tr(model.title)
+                            color: root.primaryTextColor
+                            font.bold: true
+                            fontSize: "medium"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
 
-                            Rectangle {
-                                anchors.fill: parent
-                                color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : "transparent")
-                                Behavior on color { ColorAnimation { duration: 100 } }
-                            }
+                        Icon {
+                            name: "next"
+                            width: units.gu(2.0)
+                            height: units.gu(2.0)
+                            color: root.secondaryTextColor
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: units.gu(2)
-                                anchors.rightMargin: units.gu(2)
-                                spacing: units.gu(2)
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: units.gu(6.6)
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: root.isDark ? "#2D2D2D" : "#E2E8F0"
+                        visible: index < 4
+                    }
 
-                                Icon {
-                                    name: model.icon
-                                    width: units.gu(2.6)
-                                    height: units.gu(2.6)
-                                    color: root.themeTextColor
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                Label {
-                                    text: i18n.tr(model.title)
-                                    color: root.primaryTextColor
-                                    font.bold: true
-                                    fontSize: "medium"
-                                    Layout.fillWidth: true
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                Icon {
-                                    name: "next"
-                                    width: units.gu(2.0)
-                                    height: units.gu(2.0)
-                                    color: root.secondaryTextColor
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                            }
-
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.leftMargin: units.gu(6.6)
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                height: 1
-                                color: root.isDark ? "#2D2D2D" : "#E2E8F0"
-                                visible: index < 4
-                            }
-
-                            MouseArea {
-                                id: mouseArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    settingsPage.currentSection = model.section
-                                }
-                            }
+                    MouseArea {
+                        id: mouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            settingsPage.currentSection = model.section
                         }
                     }
                 }

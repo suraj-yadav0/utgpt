@@ -422,20 +422,22 @@ Page {
             }
         }
 
-        ListView {
+        StyledListView {
             id: modelsListView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 0
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
+            Layout.bottomMargin: units.gu(1.5)
+            expandToContent: false
             model: modelsList
 
             delegate: ListItem {
                 id: modelListItem
-                width: downloadPage.width
+                width: parent.width
                 implicitHeight: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
-                divider.visible: true
+                divider.visible: index < modelsList.count - 1
 
                 leadingActions: model.ready ? deleteActions : null
                 trailingActions: {
@@ -460,7 +462,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconSource: "../assets/Download.svg"
+                            iconSource: "../../assets/Download.svg"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
@@ -503,7 +505,7 @@ Page {
                     id: cardLayout
                     x: units.gu(1.5)
                     y: units.gu(2.0)
-                    width: downloadPage.width - units.gu(3.0)
+                    width: parent.width - units.gu(3.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
