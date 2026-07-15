@@ -281,11 +281,11 @@ Page {
 
                     Repeater {
                         model: ListModel {
-                            ListElement { title: "Active Model"; icon: "message"; section: "model"; iconColor: "#3B82F6" }
-                            ListElement { title: "Inference Engine"; icon: "info"; section: "engine"; iconColor: "#F59E0B" }
-                            ListElement { title: "Generation Settings"; icon: "settings"; section: "generation"; iconColor: "#EF4444" }
-                            ListElement { title: "Performance Settings"; icon: "reload"; section: "performance"; iconColor: "#10B981" }
-                            ListElement { title: "Storage & History"; icon: "delete"; section: "storage"; iconColor: "#8B5CF6" }
+                            ListElement { title: "Active Model"; icon: "message"; section: "model" }
+                            ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
+                            ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
+                            ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
+                            ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
                         }
 
                         delegate: Item {
@@ -308,7 +308,7 @@ Page {
                                     name: model.icon
                                     width: units.gu(2.6)
                                     height: units.gu(2.6)
-                                    color: model.iconColor
+                                    color: root.themeTextColor
                                     Layout.alignment: Qt.AlignVCenter
                                 }
 
