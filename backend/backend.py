@@ -66,10 +66,12 @@ def is_binary_working(path):
             env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
             
         res = subprocess.run([path, "-h"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-        if b"error while loading shared libraries" in res.stderr:
+        if res.returncode != 0:
+            log_error("Binary check failed for {0} with return code {1}. Stderr: {2}".format(path, res.returncode, res.stderr))
             return False
         return True
-    except Exception:
+    except Exception as e:
+        log_error("Exception in is_binary_working for {0}: {1}".format(path, e))
         return False
 
 def get_llama_cli_path():
@@ -244,7 +246,14 @@ def get_model_compatibility(size_str, ram_gb):
     except Exception:
         size_gb = 1.5
 
-    if ram_gb <= 3.1:
+    if ram_gb <= 2.2:
+        if size_gb <= 0.45:
+            return "green"
+        elif size_gb <= 0.75:
+            return "yellow"
+        else:
+            return "red"
+    elif ram_gb <= 3.1:
         if size_gb <= 0.6:
             return "green"
         elif size_gb <= 1.2:
@@ -659,6 +668,43 @@ LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
 LLAMA_CLI_DOWNLOADING = False
 
+def _download_and_extract_tar(url):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+        with _urlopen(req, timeout=120) as response:
+            tar_data = response.read()
+            
+        with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
+            os.makedirs(MODELS_DIR, exist_ok=True)
+            extracted_any = False
+            for member in tar.getmembers():
+                basename = os.path.basename(member.name)
+                dest_path = os.path.join(MODELS_DIR, basename)
+                if member.isfile():
+                    f = tar.extractfile(member)
+                    if f:
+                        with open(dest_path, "wb") as dest_file:
+                            dest_file.write(f.read())
+                        if basename in ["llama-cli", "llama-completion"] or basename.endswith(".so") or ".so." in basename:
+                            os.chmod(dest_path, 0o755)
+                        extracted_any = True
+                elif member.islnk() or member.issym():
+                    target_basename = os.path.basename(member.linkname)
+                    if os.path.lexists(dest_path):
+                        try:
+                            os.remove(dest_path)
+                        except OSError:
+                            pass
+                    try:
+                        os.symlink(target_basename, dest_path)
+                    except OSError:
+                        pass
+            return extracted_any
+    except Exception as e:
+        log_error("Failed to download and extract tar from {0}: {1}".format(url, e))
+        return False
+
+
 def ensure_llama_cli():
     cli_path = get_llama_cli_path()
     completion_path = get_llama_completion_path()
@@ -706,41 +752,22 @@ def ensure_llama_cli():
         
     url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
     
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
-        with _urlopen(req, timeout=120) as response:
-            tar_data = response.read()
-            
-        with tarfile.open(fileobj=io.BytesIO(tar_data), mode="r:gz") as tar:
-            os.makedirs(MODELS_DIR, exist_ok=True)
-            extracted_any = False
-            for member in tar.getmembers():
-                basename = os.path.basename(member.name)
-                dest_path = os.path.join(MODELS_DIR, basename)
-                if member.isfile():
-                    f = tar.extractfile(member)
-                    if f:
-                        with open(dest_path, "wb") as dest_file:
-                            dest_file.write(f.read())
-                        if basename in ["llama-cli", "llama-completion"] or basename.endswith(".so") or ".so." in basename:
-                            os.chmod(dest_path, 0o755)
-                        extracted_any = True
-                elif member.islnk() or member.issym():
-                    target_basename = os.path.basename(member.linkname)
-                    if os.path.lexists(dest_path):
-                        try:
-                            os.remove(dest_path)
-                        except OSError:
-                            pass
-                    try:
-                        os.symlink(target_basename, dest_path)
-                    except OSError:
-                        pass
-            return extracted_any
-    except Exception as e:
-        global LLAMA_CLI_ERROR
-        LLAMA_CLI_ERROR = str(e)
-        return False
+    log_info("Attempting to download official llama-cli binary: {0}".format(url))
+    if _download_and_extract_tar(url):
+        if is_binary_working(cli_path) and is_binary_working(completion_path):
+            return True
+        
+        # If the official binary is not working, fall back to our compatible base ARMv8-A build
+        if target_arch == "arm64":
+            log_info("Official arm64 binary failed verification (likely Illegal Instruction / SIGILL). Attempting fallback download of compatible base ARMv8-A binary...")
+            fallback_url = "https://github.com/suraj-yadav0/utgpt/releases/download/v0.0.2/llama-compat-bin-ubuntu-arm64.tar.gz"
+            if _download_and_extract_tar(fallback_url):
+                if is_binary_working(cli_path) and is_binary_working(completion_path):
+                    log_info("Successfully downloaded and verified compatible base ARMv8-A binary.")
+                    return True
+                else:
+                    log_error("Compatible fallback binary also failed verification.")
+                    
     return False
 
 def download_llama_cli_in_background():
@@ -749,7 +776,13 @@ def download_llama_cli_in_background():
     LLAMA_CLI_ERROR = None
     try:
         if ensure_llama_cli():
-            LLAMA_CLI_READY = True
+            cli_path = get_llama_cli_path()
+            completion_path = get_llama_completion_path()
+            if is_binary_working(cli_path) and is_binary_working(completion_path):
+                LLAMA_CLI_READY = True
+            else:
+                LLAMA_CLI_READY = False
+                LLAMA_CLI_ERROR = "Downloaded binary is incompatible with this device (Illegal instruction / crash)."
         else:
             if not LLAMA_CLI_ERROR:
                 LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
