@@ -326,7 +326,7 @@ Page {
                     name: "document-open"
                     width: units.gu(2.8)
                     height: units.gu(2.8)
-                    color: root.themeColor
+                    color: root.themeTextColor
                     Layout.alignment: Qt.AlignVCenter
                 }
 

@@ -718,7 +718,7 @@ Page {
                 name: "message"
                 width: units.gu(4)
                 height: units.gu(4)
-                color: root.themeColor
+                color: root.themeTextColor
             }
         }
 
