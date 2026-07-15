@@ -273,7 +273,7 @@ Page {
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: modelSelector
                         width: parent.width
                         visible: settingsPage.availableModels.length > 0
@@ -614,7 +614,7 @@ Page {
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: ctxSelector
                         width: parent.width
                         model: ["512", "1024", "2048", "4096", "8192"]
@@ -633,7 +633,7 @@ Page {
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: faSelector
                         width: parent.width
                         model: ["auto", "on", "off"]
@@ -649,7 +649,7 @@ Page {
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: kvSelector
                         width: parent.width
                         model: ["f16", "q8_0", "q4_0"]

@@ -425,7 +425,7 @@ Page {
                         Layout.alignment: Qt.AlignVCenter
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: chatModelSelector
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
