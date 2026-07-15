@@ -291,7 +291,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: "#FFFFFF"
+        color: root.bgColor
         z: -1
     }
 
@@ -310,8 +310,8 @@ Page {
             Layout.leftMargin: units.gu(1.5)
             Layout.rightMargin: units.gu(1.5)
             Layout.preferredHeight: units.gu(12.5)
-            color: "#F8FAFC"
-            border.color: "#E2E8F0"
+            color: root.isDark ? "#1A1A1A" : "#F8FAFC"
+            border.color: root.cardBorderColor
             border.width: 1
             radius: units.gu(1.5)
 
@@ -337,11 +337,11 @@ Page {
                     Label {
                         text: i18n.tr("Import Local Model")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
                     Label {
                         text: i18n.tr("Load a .gguf file from your Downloads folder")
-                        color: "#64748B"
+                        color: root.secondaryTextColor
                         fontSize: "small"
                         wrapMode: Text.Wrap
                         Layout.fillWidth: true
@@ -390,8 +390,8 @@ Page {
             Layout.leftMargin: units.gu(1.5)
             Layout.rightMargin: units.gu(1.5)
             Layout.preferredHeight: units.gu(6.5)
-            color: "#FFFFFF"
-            border.color: "#E2E8F0"
+            color: root.cardColor
+            border.color: root.cardBorderColor
             border.width: 1
             radius: units.gu(1.5)
 
@@ -405,7 +405,7 @@ Page {
                     name: "search"
                     width: units.gu(2.2)
                     height: units.gu(2.2)
-                    color: "#94A3B8"
+                    color: root.tertiaryTextColor
                 }
 
                 TextField {
@@ -536,7 +536,7 @@ Page {
                             Label {
                                 text: model.name
                                 font.bold: true
-                                color: "#1E293B"
+                                color: root.primaryTextColor
                             }
                         }
 
@@ -544,7 +544,7 @@ Page {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
                             text: model.size + " - " + model.description
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                         }
 
@@ -567,7 +567,7 @@ Page {
                                 return i18n.tr("Downloading: ") + Math.round(model.progress * 100) + "%"
                             }
                             visible: model.downloading || model.paused
-                            color: "#475569"
+                            color: root.bodyTextColor
                             fontSize: "small"
                         }
                     }
@@ -582,7 +582,7 @@ Page {
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeColor : "#94A3B8")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeTextColor : root.tertiaryTextColor)
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {
@@ -654,9 +654,9 @@ Page {
             anchors.centerIn: parent
             width: parent.width - units.gu(8)
             height: units.gu(18)
-            color: "#FFFFFF"
+            color: root.cardColor
             radius: units.gu(1.5)
-            border.color: "#E2E8F0"
+            border.color: root.cardBorderColor
             border.width: 1
 
             ColumnLayout {
@@ -668,7 +668,7 @@ Page {
                     text: i18n.tr("Importing Model...")
                     font.bold: true
                     fontSize: "large"
-                    color: "#1E293B"
+                    color: root.primaryTextColor
                     Layout.alignment: Qt.AlignHCenter
                 }
 
@@ -676,7 +676,7 @@ Page {
                     id: importFilenameLabel
                     text: ""
                     fontSize: "small"
-                    color: "#64748B"
+                    color: root.secondaryTextColor
                     Layout.alignment: Qt.AlignHCenter
                     elide: Text.ElideMiddle
                     Layout.fillWidth: true
@@ -694,7 +694,7 @@ Page {
                 Label {
                     id: importProgressLabel
                     text: "0%"
-                    color: "#475569"
+                    color: root.bodyTextColor
                     Layout.alignment: Qt.AlignHCenter
                 }
             }
