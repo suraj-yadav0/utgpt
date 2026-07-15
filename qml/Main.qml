@@ -11,6 +11,8 @@ import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
 import io.thp.pyotherside 1.4
 import Qt.labs.settings 1.0
+import "pages"
+import "components"
 
 MainView {
     id: root

@@ -9,6 +9,7 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import QtQuick.Controls 2.2 as QQC2
+import "../components"
 
 Page {
     id: chatPage
@@ -717,7 +718,7 @@ Page {
                 name: "message"
                 width: units.gu(4)
                 height: units.gu(4)
-                color: root.themeColor
+                color: root.themeTextColor
             }
         }
 

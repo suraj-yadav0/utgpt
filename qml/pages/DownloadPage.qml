@@ -8,6 +8,7 @@
 import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
+import "../components"
 
 Page {
     id: downloadPage
@@ -268,10 +269,10 @@ Page {
             populateModelsFromCatalog()
             if (root.isDesktop) {
                 console.log("QML_LOG: Backend ready. Running on desktop, loading DesktopFilePicker...")
-                pickerLoader.source = "DesktopFilePicker.qml"
+                pickerLoader.source = "../components/DesktopFilePicker.qml"
             } else {
                 console.log("QML_LOG: Backend ready. Running on device, loading LomiriFilePicker...")
-                pickerLoader.source = "LomiriFilePicker.qml"
+                pickerLoader.source = "../components/LomiriFilePicker.qml"
             }
         }
     }
@@ -325,7 +326,7 @@ Page {
                     name: "document-open"
                     width: units.gu(2.8)
                     height: units.gu(2.8)
-                    color: root.themeColor
+                    color: root.themeTextColor
                     Layout.alignment: Qt.AlignVCenter
                 }
 
@@ -376,7 +377,7 @@ Page {
                         if (pickerLoader.item) {
                             pickerLoader.item.open()
                         } else {
-                            pickerLoader.source = "LomiriFilePicker.qml"
+                            pickerLoader.source = "../components/LomiriFilePicker.qml"
                         }
                     }
                 }
@@ -421,20 +422,22 @@ Page {
             }
         }
 
-        ListView {
+        StyledListView {
             id: modelsListView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 0
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
+            Layout.bottomMargin: units.gu(1.5)
+            expandToContent: false
             model: modelsList
 
             delegate: ListItem {
                 id: modelListItem
-                width: downloadPage.width
+                width: parent.width
                 implicitHeight: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
-                divider.visible: true
+                divider.visible: index < modelsList.count - 1
 
                 leadingActions: model.ready ? deleteActions : null
                 trailingActions: {
@@ -459,7 +462,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconSource: "../assets/Download.svg"
+                            iconSource: root.isDark ? "../../assets/Download-white.svg" : "../../assets/Download.svg"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
@@ -502,7 +505,7 @@ Page {
                     id: cardLayout
                     x: units.gu(1.5)
                     y: units.gu(2.0)
-                    width: downloadPage.width - units.gu(3.0)
+                    width: parent.width - units.gu(3.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
@@ -619,7 +622,7 @@ Page {
             if (status === Loader.Error) {
                 if (source.toString().indexOf("LomiriFilePicker.qml") >= 0) {
                     console.log("Failed to load Lomiri picker, trying Desktop picker...")
-                    source = "DesktopFilePicker.qml"
+                    source = "../components/DesktopFilePicker.qml"
                 } else {
                     console.log("Failed to load Desktop picker as well.")
                 }

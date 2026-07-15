@@ -9,14 +9,21 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import QtQuick.Controls 2.2 as QQC2
 import Lomiri.Components 1.3
+import "../components"
 
 Page {
     id: settingsPage
     signal toggleSidebar()
 
+    property string currentSection: ""
+
     header: PageHeader {
         id: settingsHeader
-        title: i18n.tr("Settings")
+        title: settingsPage.currentSection === "" ? i18n.tr("Settings") :
+               settingsPage.currentSection === "model" ? i18n.tr("Active Model") :
+               settingsPage.currentSection === "engine" ? i18n.tr("Inference Engine") :
+               settingsPage.currentSection === "generation" ? i18n.tr("Generation Settings") :
+               settingsPage.currentSection === "performance" ? i18n.tr("Performance Settings") : i18n.tr("Storage & History")
         StyleHints {
             backgroundColor: root.themeColor
             foregroundColor: "white"
@@ -24,10 +31,16 @@ Page {
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
-                iconName: "navigation-menu"
-                text: i18n.tr("Menu")
+                iconName: settingsPage.currentSection === "" ? "navigation-menu" : "back"
+                text: settingsPage.currentSection === "" ? i18n.tr("Menu") : i18n.tr("Back")
                 visible: true
-                onTriggered: settingsPage.toggleSidebar()
+                onTriggered: {
+                    if (settingsPage.currentSection === "") {
+                        settingsPage.toggleSidebar()
+                    } else {
+                        settingsPage.currentSection = ""
+                    }
+                }
             }
         ]
         NavigationRow {
@@ -212,10 +225,14 @@ Page {
     }
 
     onVisibleChanged: {
-        if (visible && backendReady) {
-            refreshModels()
-            refreshStorage()
-            refreshEngineStatus()
+        if (visible) {
+            if (backendReady) {
+                refreshModels()
+                refreshStorage()
+                refreshEngineStatus()
+            }
+        } else {
+            currentSection = ""
         }
     }
 
@@ -245,10 +262,89 @@ Page {
             }
             spacing: units.gu(2)
 
+            // MAIN SETTINGS LIST
+            StyledListView {
+                id: listMenuContainer
+                width: parent.width
+                expandToContent: true
+                visible: settingsPage.currentSection === ""
+
+                model: ListModel {
+                    ListElement { title: "Active Model"; icon: "message"; section: "model" }
+                    ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
+                    ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
+                    ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
+                    ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
+                }
+
+                delegate: Item {
+                    width: listMenuContainer.width
+                    height: units.gu(7.5)
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : "transparent")
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        spacing: units.gu(2)
+
+                        Icon {
+                            name: model.icon
+                            width: units.gu(2.6)
+                            height: units.gu(2.6)
+                            color: root.themeTextColor
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: i18n.tr(model.title)
+                            color: root.primaryTextColor
+                            font.bold: true
+                            fontSize: "medium"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Icon {
+                            name: "next"
+                            width: units.gu(2.0)
+                            height: units.gu(2.0)
+                            color: root.secondaryTextColor
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: units.gu(6.6)
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: root.isDark ? "#2D2D2D" : "#E2E8F0"
+                        visible: index < 4
+                    }
+
+                    MouseArea {
+                        id: mouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            settingsPage.currentSection = model.section
+                        }
+                    }
+                }
+            }
+
             // Card 1: Active Model
             Rectangle {
                 width: parent.width
                 height: activeModelColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "model"
                 color: root.cardColor
                 border.color: root.cardBorderColor
                 border.width: 1
@@ -297,7 +393,7 @@ Page {
                 border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
-                visible: settingsPage.selectedModel !== ""
+                visible: settingsPage.currentSection === "model" && settingsPage.selectedModel !== ""
 
                 Column {
                     id: modelSpecsColumn
@@ -400,6 +496,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: engineStatusColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "engine"
                 color: root.cardColor
                 border.color: root.cardBorderColor
                 border.width: 1
@@ -485,6 +582,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: genSettingsColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "generation"
                 color: root.cardColor
                 border.color: root.cardBorderColor
                 border.width: 1
@@ -559,6 +657,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: perfSettingsColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "performance"
                 color: root.cardColor
                 border.color: root.cardBorderColor
                 border.width: 1
@@ -673,6 +772,7 @@ Page {
             Rectangle {
                 width: parent.width
                 height: storageColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "storage"
                 color: root.cardColor
                 border.color: root.cardBorderColor
                 border.width: 1
@@ -701,6 +801,7 @@ Page {
 
             Button {
                 width: parent.width
+                visible: settingsPage.currentSection === "storage"
                 text: i18n.tr("Clear chat history")
                 color: "#C7162B"
                 onClicked: settingsPage.clearChat()
