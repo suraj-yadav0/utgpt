@@ -8,6 +8,7 @@
 import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
+import "../components"
 
 Page {
     id: downloadPage
@@ -268,10 +269,10 @@ Page {
             populateModelsFromCatalog()
             if (root.isDesktop) {
                 console.log("QML_LOG: Backend ready. Running on desktop, loading DesktopFilePicker...")
-                pickerLoader.source = "DesktopFilePicker.qml"
+                pickerLoader.source = "../components/DesktopFilePicker.qml"
             } else {
                 console.log("QML_LOG: Backend ready. Running on device, loading LomiriFilePicker...")
-                pickerLoader.source = "LomiriFilePicker.qml"
+                pickerLoader.source = "../components/LomiriFilePicker.qml"
             }
         }
     }
@@ -376,7 +377,7 @@ Page {
                         if (pickerLoader.item) {
                             pickerLoader.item.open()
                         } else {
-                            pickerLoader.source = "LomiriFilePicker.qml"
+                            pickerLoader.source = "../components/LomiriFilePicker.qml"
                         }
                     }
                 }
@@ -619,7 +620,7 @@ Page {
             if (status === Loader.Error) {
                 if (source.toString().indexOf("LomiriFilePicker.qml") >= 0) {
                     console.log("Failed to load Lomiri picker, trying Desktop picker...")
-                    source = "DesktopFilePicker.qml"
+                    source = "../components/DesktopFilePicker.qml"
                 } else {
                     console.log("Failed to load Desktop picker as well.")
                 }

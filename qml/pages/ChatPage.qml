@@ -9,6 +9,7 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import QtQuick.Controls 2.2 as QQC2
+import "../components"
 
 Page {
     id: chatPage
