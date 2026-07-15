@@ -14,7 +14,7 @@ Item {
     FileDialog {
         id: fileDialog
         title: "Select GGUF Model File"
-        folder: shortcuts.download
+        folder: shortcuts.home
         nameFilters: [ "GGUF files (*.gguf)" ]
         onAccepted: {
             pickerItem.fileSelected(fileDialog.fileUrl.toString())

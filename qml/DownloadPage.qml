@@ -175,11 +175,17 @@ Page {
                 return
             } else if (data.event === "import_complete") {
                 importOverlay.visible = false
+                if (pickerLoader.item && typeof pickerLoader.item.finalizeTransfer === "function") {
+                    pickerLoader.item.finalizeTransfer()
+                }
                 root.refreshModels()
                 root.showNotification(i18n.tr("Import Successful"), i18n.tr("Successfully imported ") + data.payload.filename + i18n.tr(". You can now select it as the Active Model in Settings."))
                 return
             } else if (data.event === "import_error") {
                 importOverlay.visible = false
+                if (pickerLoader.item && typeof pickerLoader.item.finalizeTransfer === "function") {
+                    pickerLoader.item.finalizeTransfer()
+                }
                 root.showError(i18n.tr("Failed to import model: ") + data.payload.error)
                 return
             }
@@ -260,6 +266,13 @@ Page {
     onBackendReadyChanged: {
         if (backendReady) {
             populateModelsFromCatalog()
+            if (root.isDesktop) {
+                console.log("QML_LOG: Backend ready. Running on desktop, loading DesktopFilePicker...")
+                pickerLoader.source = "DesktopFilePicker.qml"
+            } else {
+                console.log("QML_LOG: Backend ready. Running on device, loading LomiriFilePicker...")
+                pickerLoader.source = "LomiriFilePicker.qml"
+            }
         }
     }
     
@@ -688,7 +701,5 @@ Page {
         }
     }
 
-    Component.onCompleted: {
-        pickerLoader.source = "LomiriFilePicker.qml"
-    }
+
 }

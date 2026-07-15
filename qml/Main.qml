@@ -38,6 +38,7 @@ MainView {
     }
 
     property bool backendReady: false
+    property bool isDesktop: false
     property bool debugMode: false
     property string backendError: ""
     property int currentTabIndex: 0
@@ -189,6 +190,7 @@ MainView {
                 python.call("backend.initialize", [], function(result) {
                     if (result) {
                         root.debugMode = !!result.debug
+                        root.isDesktop = !!result.isDesktop
                         if (!result.llamaCliReady) {
                             PopupUtils.open(downloadPromptDialogComponent, root)
                         }

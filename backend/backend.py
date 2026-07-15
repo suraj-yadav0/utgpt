@@ -1506,15 +1506,20 @@ def import_local_model_thread(file_url, request_id):
         from urllib.request import url2pathname
 
         if file_url.startswith("file://"):
-            parsed = urllib.parse.urlparse(file_url)
-            source_path = url2pathname(parsed.path)
+            path = file_url[7:]
+            if path.startswith("localhost/"):
+                path = path[9:]
+            if not path.startswith("/"):
+                path = "/" + path
+            source_path = urllib.parse.unquote(path)
         else:
             source_path = file_url
 
         if not os.path.exists(source_path):
+            log_error("Import local model failed: source path '{0}' does not exist (original url: '{1}')".format(source_path, file_url))
             _send_event("import_error", {
                 "requestId": request_id,
-                "error": "Source file does not exist"
+                "error": "Source file does not exist at: {0}".format(source_path)
             })
             return
 
@@ -1611,11 +1616,16 @@ def initialize():
     else:
         LLAMA_CLI_READY = False
         
+    is_desktop = True
+    if os.environ.get("APP_ID") or os.environ.get("LOMIRI_APP_LAUNCH_ENV"):
+        is_desktop = False
+
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
         "llamaCliReady": LLAMA_CLI_READY,
-        "debug": DEBUG_MODE
+        "debug": DEBUG_MODE,
+        "isDesktop": is_desktop
     }
 
