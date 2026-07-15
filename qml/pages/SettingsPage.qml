@@ -263,76 +263,90 @@ Page {
             spacing: units.gu(2)
 
             // MAIN SETTINGS LIST
-            Column {
-                id: listMenu
+            Rectangle {
+                id: listMenuContainer
                 width: parent.width
+                height: listMenuColumn.height
                 visible: settingsPage.currentSection === ""
-                spacing: units.gu(1.5)
+                color: root.cardColor
+                border.color: root.cardBorderColor
+                border.width: 1
+                radius: units.gu(1.5)
+                clip: true
 
-                Repeater {
-                    model: ListModel {
-                        ListElement { title: "Active Model"; icon: "message"; section: "model" }
-                        ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
-                        ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
-                        ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
-                        ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
-                    }
+                Column {
+                    id: listMenuColumn
+                    width: parent.width
+                    spacing: 0
 
-                    delegate: Rectangle {
-                        width: listMenu.width
-                        height: units.gu(7.5)
-                        color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : root.cardColor)
-                        border.color: root.cardBorderColor
-                        border.width: 1
-                        radius: units.gu(1.5)
+                    Repeater {
+                        model: ListModel {
+                            ListElement { title: "Active Model"; icon: "message"; section: "model"; iconColor: "#3B82F6" }
+                            ListElement { title: "Inference Engine"; icon: "info"; section: "engine"; iconColor: "#F59E0B" }
+                            ListElement { title: "Generation Settings"; icon: "settings"; section: "generation"; iconColor: "#EF4444" }
+                            ListElement { title: "Performance Settings"; icon: "reload"; section: "performance"; iconColor: "#10B981" }
+                            ListElement { title: "Storage & History"; icon: "delete"; section: "storage"; iconColor: "#8B5CF6" }
+                        }
 
-                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: units.gu(2)
-                            anchors.rightMargin: units.gu(2)
-                            spacing: units.gu(2)
+                        delegate: Item {
+                            width: listMenuColumn.width
+                            height: units.gu(7.5)
 
                             Rectangle {
-                                width: units.gu(4)
-                                height: units.gu(4)
-                                radius: units.gu(1)
-                                color: root.isDark ? "#2A1E20" : "#FFF5F5"
-                                Layout.alignment: Qt.AlignVCenter
+                                anchors.fill: parent
+                                color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : "transparent")
+                                Behavior on color { ColorAnimation { duration: 100 } }
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: units.gu(2)
+                                anchors.rightMargin: units.gu(2)
+                                spacing: units.gu(2)
+
                                 Icon {
-                                    anchors.centerIn: parent
                                     name: model.icon
-                                    width: units.gu(2.2)
-                                    height: units.gu(2.2)
-                                    color: root.themeTextColor
+                                    width: units.gu(2.6)
+                                    height: units.gu(2.6)
+                                    color: model.iconColor
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Label {
+                                    text: i18n.tr(model.title)
+                                    color: root.primaryTextColor
+                                    font.bold: true
+                                    fontSize: "medium"
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Icon {
+                                    name: "next"
+                                    width: units.gu(2.0)
+                                    height: units.gu(2.0)
+                                    color: root.secondaryTextColor
+                                    Layout.alignment: Qt.AlignVCenter
                                 }
                             }
 
-                            Label {
-                                text: i18n.tr(model.title)
-                                color: root.primaryTextColor
-                                font.bold: true
-                                fontSize: "medium"
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.leftMargin: units.gu(6.6)
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: root.isDark ? "#2D2D2D" : "#E2E8F0"
+                                visible: index < 4
                             }
 
-                            Icon {
-                                name: "next"
-                                width: units.gu(2.0)
-                                height: units.gu(2.0)
-                                color: root.secondaryTextColor
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-                        }
-
-                        MouseArea {
-                            id: mouseArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                settingsPage.currentSection = model.section
+                            MouseArea {
+                                id: mouseArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    settingsPage.currentSection = model.section
+                                }
                             }
                         }
                     }
