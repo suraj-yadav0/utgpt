@@ -221,7 +221,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: "#f5f5f7"
+        color: root.bgColor
         z: -1
     }
 
@@ -249,8 +249,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: activeModelColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -263,17 +263,17 @@ Page {
                     Label {
                         text: i18n.tr("Active Model")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("No models downloaded yet")
                         visible: settingsPage.availableModels.length === 0
-                        color: "#64748B"
+                        color: root.secondaryTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: modelSelector
                         width: parent.width
                         visible: settingsPage.availableModels.length > 0
@@ -293,8 +293,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: modelSpecsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
                 visible: settingsPage.selectedModel !== ""
@@ -308,7 +308,7 @@ Page {
                     Label {
                         text: i18n.tr("Model Specifications")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     GridLayout {
@@ -321,74 +321,74 @@ Page {
 
                         Label {
                             text: i18n.tr("Model Name:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.name : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Developer:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.developer : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("File Size:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.size : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Context Window:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.context : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Quantization:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.quant : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Recommended For:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                             Layout.alignment: Qt.AlignTop
                         }
                         Label {
                             text: parent.info ? parent.info.usage : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                             wrapMode: Text.Wrap
                         }
@@ -400,8 +400,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: engineStatusColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -414,7 +414,7 @@ Page {
                     Label {
                         text: i18n.tr("Inference Engine")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     RowLayout {
@@ -437,7 +437,7 @@ Page {
                                 return i18n.tr("Not Downloaded");
                             }
                             font.bold: true
-                            color: "#475569"
+                            color: root.bodyTextColor
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignVCenter
                         }
@@ -472,7 +472,7 @@ Page {
 
                     Label {
                         text: i18n.tr("Required to run local .gguf models on your device.")
-                        color: "#64748B"
+                        color: root.secondaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
@@ -485,8 +485,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: genSettingsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -499,12 +499,12 @@ Page {
                     Label {
                         text: i18n.tr("Generation Settings")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("Temperature") + ": " + settingsPage.temperature.toFixed(1)
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -528,7 +528,7 @@ Page {
 
                     Label {
                         text: i18n.tr("Max response length") + ": " + settingsPage.maxTokens + i18n.tr(" tokens")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -559,8 +559,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: perfSettingsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -573,12 +573,12 @@ Page {
                     Label {
                         text: i18n.tr("Performance Settings")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("CPU Threads") + ": " + settingsPage.threads
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -602,7 +602,7 @@ Page {
                     
                     Label {
                         text: i18n.tr("Recommended: 4 threads on octa-core devices to avoid overheating and thermal throttling.")
-                        color: "#94A3B8"
+                        color: root.tertiaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
@@ -610,11 +610,11 @@ Page {
 
                     Label {
                         text: i18n.tr("Context Size Limit")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: ctxSelector
                         width: parent.width
                         model: ["512", "1024", "2048", "4096", "8192"]
@@ -629,11 +629,11 @@ Page {
 
                     Label {
                         text: i18n.tr("Flash Attention")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: faSelector
                         width: parent.width
                         model: ["auto", "on", "off"]
@@ -645,11 +645,11 @@ Page {
 
                     Label {
                         text: i18n.tr("KV Cache Quantization")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: kvSelector
                         width: parent.width
                         model: ["f16", "q8_0", "q4_0"]
@@ -661,7 +661,7 @@ Page {
 
                     Label {
                         text: i18n.tr("Recommended: q8_0 or q4_0 to significantly reduce memory transfer and speed up token generation on mobile CPUs.")
-                        color: "#94A3B8"
+                        color: root.tertiaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
@@ -673,8 +673,8 @@ Page {
             Rectangle {
                 width: parent.width
                 height: storageColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -687,12 +687,12 @@ Page {
                     Label {
                         text: i18n.tr("Storage")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: settingsPage.freeStorage
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
                 }

@@ -20,7 +20,31 @@ MainView {
     anchorToKeyboard: true
 
     readonly property color themeColor: "#5C0A1A" // Dark Maroon
-    readonly property color themeBgLight: "#F5EAEB" // Light Maroon tint
+    readonly property bool isDark: theme.name.indexOf("SuruDark") !== -1
+    readonly property color themeBgLight: isDark ? "#3D141C" : "#F5EAEB" // Maroon tint
+    readonly property color themeTextColor: isDark ? "#FF8093" : themeColor
+
+    // Theme backgrounds
+    readonly property color bgColor: isDark ? "#121212" : "#f5f5f7"
+    readonly property color cardColor: isDark ? "#1E1E1E" : "#FFFFFF"
+    readonly property color cardBorderColor: isDark ? "#2D2D2D" : "#E2E8F0"
+    readonly property color sidebarBgColor: isDark ? "#181818" : "#FFFFFF"
+    readonly property color sidebarFooterBgColor: isDark ? "#121212" : "#F8F9FA"
+
+    // Text colors
+    readonly property color primaryTextColor: isDark ? "#F8FAFC" : "#1E293B"
+    readonly property color secondaryTextColor: isDark ? "#CBD5E1" : "#64748B"
+    readonly property color tertiaryTextColor: isDark ? "#94A3B8" : "#94A3B8"
+    readonly property color bodyTextColor: isDark ? "#E2E8F0" : "#475569"
+
+    // Bubble backgrounds
+    readonly property color assistantBubbleColor: isDark ? "#1E1E1E" : "#FFFFFF"
+    readonly property color assistantBubbleBorderColor: isDark ? "#2D2D2D" : "#E2E8F0"
+    readonly property color assistantBubbleTextColor: isDark ? "#F8FAFC" : "#1E293B"
+
+    // Suggested Question Buttons
+    readonly property color tryAskingButtonColor: isDark ? "#1E1E1E" : "#F1F5F9"
+    readonly property color tryAskingButtonTextColor: isDark ? "#E2E8F0" : "#475569"
 
     width: units.gu(45)
     height: units.gu(75)
@@ -202,7 +226,7 @@ MainView {
     }
 
     function tabButtonColor(index) {
-        return currentTabIndex === index ? root.themeColor : "#d7d7d7"
+        return currentTabIndex === index ? (root.isDark ? "#FF8093" : root.themeColor) : (root.isDark ? "#666666" : "#d7d7d7")
     }
 
     Component {
@@ -429,7 +453,7 @@ MainView {
         z: 100
         height: parent.height
         width: units.gu(30)
-        color: "#FFFFFF" // Clean white background
+        color: root.sidebarBgColor
 
         x: root.sidebarOpen ? 0 : -width
         Behavior on x {
@@ -495,7 +519,7 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: "#E2E8F0"
+                color: root.cardBorderColor
             }
 
             // Sessions List
@@ -511,7 +535,7 @@ MainView {
                     id: sessionListItem
                     width: sessionsListView.width
                     height: units.gu(6.5)
-                    color: root.currentSessionId === modelData.id ? root.themeBgLight : "#FFFFFF"
+                    color: root.currentSessionId === modelData.id ? root.themeBgLight : root.sidebarBgColor
                     highlightColor: root.themeBgLight
 
                     leadingActions: ListItemActions {
@@ -555,14 +579,14 @@ MainView {
                             name: "message"
                             width: units.gu(2.2)
                             height: units.gu(2.2)
-                            color: root.currentSessionId === modelData.id ? root.themeColor : "#64748B"
+                            color: root.currentSessionId === modelData.id ? root.themeTextColor : root.secondaryTextColor
                             Layout.alignment: Qt.AlignVCenter
                         }
 
                         // Session title label
                         Label {
                             text: modelData.title
-                            color: root.currentSessionId === modelData.id ? root.themeColor : "#475569"
+                            color: root.currentSessionId === modelData.id ? root.themeTextColor : root.bodyTextColor
                             font.bold: root.currentSessionId === modelData.id
                             fontSize: "medium"
                             Layout.fillWidth: true
@@ -579,7 +603,7 @@ MainView {
                         anchors.leftMargin: units.gu(1.5)
                         anchors.rightMargin: units.gu(1.5)
                         height: 1
-                        color: "#E2E8F0"
+                        color: root.cardBorderColor
                     }
                 }
             }
@@ -588,20 +612,20 @@ MainView {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: units.gu(6)
-                color: "#F8F9FA"
+                color: root.sidebarFooterBgColor
 
                 Rectangle {
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 1
-                    color: "#E2E8F0"
+                    color: root.cardBorderColor
                 }
 
                 Label {
                     anchors.centerIn: parent
                     text: "v0.1.0"
-                    color: "#94A3B8"
+                    color: root.tertiaryTextColor
                     fontSize: "x-small"
                 }
             }
@@ -611,7 +635,7 @@ MainView {
     Rectangle {
         anchors.fill: parent
         visible: !root.backendReady
-        color: "#f5f5f5"
+        color: root.bgColor
 
         Column {
             anchors.centerIn: parent
