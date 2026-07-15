@@ -66,10 +66,12 @@ def is_binary_working(path):
             env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
             
         res = subprocess.run([path, "-h"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-        if b"error while loading shared libraries" in res.stderr:
+        if res.returncode != 0:
+            log_error("Binary check failed for {0} with return code {1}. Stderr: {2}".format(path, res.returncode, res.stderr))
             return False
         return True
-    except Exception:
+    except Exception as e:
+        log_error("Exception in is_binary_working for {0}: {1}".format(path, e))
         return False
 
 def get_llama_cli_path():
@@ -749,7 +751,13 @@ def download_llama_cli_in_background():
     LLAMA_CLI_ERROR = None
     try:
         if ensure_llama_cli():
-            LLAMA_CLI_READY = True
+            cli_path = get_llama_cli_path()
+            completion_path = get_llama_completion_path()
+            if is_binary_working(cli_path) and is_binary_working(completion_path):
+                LLAMA_CLI_READY = True
+            else:
+                LLAMA_CLI_READY = False
+                LLAMA_CLI_ERROR = "Downloaded binary is incompatible with this device (Illegal instruction / crash)."
         else:
             if not LLAMA_CLI_ERROR:
                 LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
