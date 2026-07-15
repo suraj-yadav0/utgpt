@@ -462,7 +462,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconSource: "../../assets/Download.svg"
+                            iconSource: root.isDark ? "../../assets/Download-white.svg" : "../../assets/Download.svg"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
