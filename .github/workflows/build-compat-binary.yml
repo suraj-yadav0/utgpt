@@ -1,4 +1,4 @@
-name: Build Compatible ARM64 Binary
+name: Build and Release UTGPT App & Binary
 
 on:
   release:
@@ -6,17 +6,23 @@ on:
 
 jobs:
   build:
-    name: Build base ARMv8-A binary
+    name: Build UTGPT Click Package & Compatible Binary
     runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up QEMU or cross-compiler tools
+      - name: Install Clickable & dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu git tar
+          sudo apt-get install -y cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu git tar python3-pip python3-setuptools
+          pip3 install --user clickable-ut
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build Click Package
+        run: |
+          clickable build
 
       - name: Clone llama.cpp
         run: |
@@ -70,9 +76,11 @@ jobs:
           cd dist
           tar -czf ../../../llama-compat-bin-ubuntu-arm64.tar.gz *
 
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
-          files: llama-compat-bin-ubuntu-arm64.tar.gz
+          files: |
+            llama-compat-bin-ubuntu-arm64.tar.gz
+            *.click
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
