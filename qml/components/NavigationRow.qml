@@ -29,7 +29,7 @@ Row {
             name: "message"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 0 ? root.themeColor : "#E2E8F0"
+            color: root.currentTabIndex === 0 ? root.themeTextColor : "#E2E8F0"
         }
 
         MouseArea {
@@ -56,7 +56,7 @@ Row {
             name: "package-x-generic-symbolic"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 1 ? root.themeColor : "#E2E8F0"
+            color: root.currentTabIndex === 1 ? root.themeTextColor : "#E2E8F0"
         }
 
         MouseArea {
@@ -83,7 +83,7 @@ Row {
             name: "settings"
             width: units.gu(2.4)
             height: units.gu(2.4)
-            color: root.currentTabIndex === 2 ? root.themeColor : "#E2E8F0"
+            color: root.currentTabIndex === 2 ? root.themeTextColor : "#E2E8F0"
         }
 
         MouseArea {

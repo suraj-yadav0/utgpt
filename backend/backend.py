@@ -66,10 +66,12 @@ def is_binary_working(path):
             env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
             
         res = subprocess.run([path, "-h"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-        if b"error while loading shared libraries" in res.stderr:
+        if res.returncode != 0:
+            log_error("Binary check failed for {0} with return code {1}. Stderr: {2}".format(path, res.returncode, res.stderr))
             return False
         return True
-    except Exception:
+    except Exception as e:
+        log_error("Exception in is_binary_working for {0}: {1}".format(path, e))
         return False
 
 def get_llama_cli_path():
@@ -244,7 +246,14 @@ def get_model_compatibility(size_str, ram_gb):
     except Exception:
         size_gb = 1.5
 
-    if ram_gb <= 3.1:
+    if ram_gb <= 2.2:
+        if size_gb <= 0.45:
+            return "green"
+        elif size_gb <= 0.75:
+            return "yellow"
+        else:
+            return "red"
+    elif ram_gb <= 3.1:
         if size_gb <= 0.6:
             return "green"
         elif size_gb <= 1.2:
@@ -443,7 +452,7 @@ def list_models():
 
     entries = []
     for filename in os.listdir(models_dir):
-        if filename.lower().endswith(".gguf"):
+        if filename.lower().endswith(".gguf") and not filename.lower().startswith("mmproj"):
             entries.append(filename)
     entries.sort()
     return entries
@@ -657,40 +666,9 @@ def get_download_states():
 
 LLAMA_CLI_READY = False
 LLAMA_CLI_ERROR = None
+LLAMA_CLI_DOWNLOADING = False
 
-def ensure_llama_cli():
-    cli_path = get_llama_cli_path()
-    completion_path = get_llama_completion_path()
-    if is_binary_working(cli_path) and is_binary_working(completion_path):
-        return True
-    
-    system = platform.system().lower()
-    machine = platform.machine().lower()
-    
-    arch_map = {
-        "aarch64": "arm64",
-        "arm64": "arm64",
-        "x86_64": "x64",
-        "amd64": "x64"
-    }
-    
-    target_arch = arch_map.get(machine)
-    if not target_arch:
-        target_arch = "arm64" if "arm" in machine or "aarch" in machine else "x64"
-        
-    tag = "b9555"
-    try:
-        import json
-        req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest", headers={"User-Agent": "UTGPT/0.1"})
-        with _urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode())
-            if "tag_name" in data:
-                tag = data["tag_name"]
-    except Exception:
-        pass
-        
-    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
-    
+def _download_and_extract_tar(url):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=120) as response:
@@ -723,21 +701,127 @@ def ensure_llama_cli():
                         pass
             return extracted_any
     except Exception as e:
-        global LLAMA_CLI_ERROR
-        LLAMA_CLI_ERROR = str(e)
+        log_error("Failed to download and extract tar from {0}: {1}".format(url, e))
         return False
+
+
+def ensure_llama_cli():
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
+        return True
+    
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    
+    arch_map = {
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "x86_64": "x64",
+        "amd64": "x64"
+    }
+    
+    target_arch = arch_map.get(machine)
+    if not target_arch:
+        target_arch = "arm64" if "arm" in machine or "aarch" in machine else "x64"
+        
+    tag = "b9874"
+    try:
+        import json
+        req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5", headers={"User-Agent": "UTGPT/0.1"})
+        with _urlopen(req, timeout=10) as response:
+            releases = json.loads(response.read().decode())
+            expected_asset_suffix = f"-bin-ubuntu-{target_arch}.tar.gz"
+            found_tag = None
+            for release in releases:
+                r_tag = release.get("tag_name")
+                if not r_tag:
+                    continue
+                assets = release.get("assets", [])
+                expected_asset_name = f"llama-{r_tag}{expected_asset_suffix}"
+                if any(asset.get("name") == expected_asset_name for asset in assets):
+                    found_tag = r_tag
+                    break
+            if found_tag:
+                tag = found_tag
+                log_info("Resolved latest llama.cpp release tag to: {0}".format(tag))
+            else:
+                log_info("No release with valid asset found in latest releases, using fallback tag: {0}".format(tag))
+    except Exception as e:
+        log_error("Error fetching latest release from GitHub API: {0}. Using fallback tag: {1}".format(e, tag))
+        
+    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
+    
+    log_info("Attempting to download official llama-cli binary: {0}".format(url))
+    if _download_and_extract_tar(url):
+        if is_binary_working(cli_path) and is_binary_working(completion_path):
+            return True
+        
+        # If the official binary is not working, fall back to our compatible base ARMv8-A build
+        if target_arch == "arm64":
+            log_info("Official arm64 binary failed verification (likely Illegal Instruction / SIGILL). Attempting fallback download of compatible base ARMv8-A binary...")
+            fallback_url = "https://github.com/suraj-yadav0/utgpt/releases/download/v0.0.2/llama-compat-bin-ubuntu-arm64.tar.gz"
+            if _download_and_extract_tar(fallback_url):
+                if is_binary_working(cli_path) and is_binary_working(completion_path):
+                    log_info("Successfully downloaded and verified compatible base ARMv8-A binary.")
+                    return True
+                else:
+                    log_error("Compatible fallback binary also failed verification.")
+                    
     return False
 
 def download_llama_cli_in_background():
-    global LLAMA_CLI_READY, LLAMA_CLI_ERROR
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    LLAMA_CLI_DOWNLOADING = True
+    LLAMA_CLI_ERROR = None
     try:
         if ensure_llama_cli():
-            LLAMA_CLI_READY = True
+            cli_path = get_llama_cli_path()
+            completion_path = get_llama_completion_path()
+            if is_binary_working(cli_path) and is_binary_working(completion_path):
+                LLAMA_CLI_READY = True
+            else:
+                LLAMA_CLI_READY = False
+                LLAMA_CLI_ERROR = "Downloaded binary is incompatible with this device (Illegal instruction / crash)."
         else:
             if not LLAMA_CLI_ERROR:
                 LLAMA_CLI_ERROR = "Failed to download llama-cli from GitHub"
     except Exception as e:
         LLAMA_CLI_ERROR = str(e)
+    finally:
+        LLAMA_CLI_DOWNLOADING = False
+
+def start_inference_engine_download():
+    global LLAMA_CLI_READY, LLAMA_CLI_DOWNLOADING
+    if LLAMA_CLI_DOWNLOADING:
+        return False
+    if LLAMA_CLI_READY:
+        return True
+    thread = threading.Thread(target=download_llama_cli_in_background)
+    thread.daemon = True
+    thread.start()
+    return True
+
+def get_inference_engine_status():
+    global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
+    cli_path = get_llama_cli_path()
+    completion_path = get_llama_completion_path()
+    
+    if is_binary_working(cli_path) and is_binary_working(completion_path):
+        LLAMA_CLI_READY = True
+        status = "ready"
+        err_msg = ""
+    elif LLAMA_CLI_DOWNLOADING:
+        status = "downloading"
+        err_msg = ""
+    else:
+        status = "error" if LLAMA_CLI_ERROR else "not_started"
+        err_msg = str(LLAMA_CLI_ERROR) if LLAMA_CLI_ERROR else ""
+        
+    return {
+        "status": status,
+        "error": err_msg
+    }
 
 def delete_model(filename):
     models_dir = _ensure_models_dir()
@@ -1004,7 +1088,9 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         template_type = metadata.get("promptTemplate")
 
     if not template_type:
-        if "llama-3" in model_lower or "granite" in model_lower:
+        if "base" in model_lower:
+            template_type = "default"
+        elif "llama-3" in model_lower or "granite" in model_lower:
             template_type = "llama3"
         elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
             template_type = "chatml"
@@ -1201,10 +1287,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
     cli_path = get_llama_completion_path() if os.path.exists(get_llama_completion_path()) else get_llama_cli_path()
     if not os.path.exists(cli_path):
+        global LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
         if LLAMA_CLI_ERROR:
             error_msg = "Missing inference engine. Downloader error: " + str(LLAMA_CLI_ERROR)
-        else:
+        elif LLAMA_CLI_DOWNLOADING:
             error_msg = "Inference engine is still downloading. Please try again in a moment."
+        else:
+            error_msg = "Inference engine has not been downloaded yet. Please go to Settings to download it."
         log_error("inference engine not found: {0}".format(error_msg))
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
@@ -1222,7 +1311,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 template_type = metadata.get("promptTemplate")
             if not template_type:
                 model_lower = model_filename.lower()
-                if "llama-3" in model_lower or "granite" in model_lower:
+                if "base" in model_lower:
+                    template_type = "default"
+                elif "llama-3" in model_lower or "granite" in model_lower:
                     template_type = "llama3"
                 elif "qwen" in model_lower or "deepseek" in model_lower or "smollm" in model_lower:
                     template_type = "chatml"
@@ -1244,6 +1335,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 stop_tokens = ["<end_of_turn>", "<start_of_turn>"]
             elif template_type == "phi3":
                 stop_tokens = ["<|end|>", "<|user|>"]
+            elif template_type == "default":
+                stop_tokens = ["\nUser:", "\nAssistant:", "\nSystem:"]
 
             additional_args = [
                 "-t", str(int(threads)),
@@ -1440,6 +1533,110 @@ def stop_all_inference():
         _terminate_process(process)
 
 
+def import_local_model_thread(file_url, request_id):
+    try:
+        import urllib.parse
+        from urllib.request import url2pathname
+
+        if file_url.startswith("file://"):
+            path = file_url[7:]
+            if path.startswith("localhost/"):
+                path = path[9:]
+            if not path.startswith("/"):
+                path = "/" + path
+            source_path = urllib.parse.unquote(path)
+        else:
+            source_path = file_url
+
+        if not os.path.exists(source_path):
+            log_error("Import local model failed: source path '{0}' does not exist (original url: '{1}')".format(source_path, file_url))
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Source file does not exist at: {0}".format(source_path)
+            })
+            return
+
+        if not source_path.lower().endswith(".gguf"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Only .gguf files are supported"
+            })
+            return
+
+        filename = os.path.basename(source_path)
+        if filename.lower().startswith("mmproj"):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Multimodal projector files (mmproj-*.gguf) cannot be loaded as standalone language models. Please download an instruct or chat model."
+            })
+            return
+        dest_dir = _ensure_models_dir()
+        dest_path = os.path.join(dest_dir, filename)
+
+        if os.path.exists(dest_path):
+            _send_event("import_error", {
+                "requestId": request_id,
+                "error": "Model with this filename already exists in application storage"
+            })
+            return
+
+        total_size = os.path.getsize(source_path)
+        bytes_copied = 0
+        chunk_size = 4 * 1024 * 1024  # 4MB chunks
+
+        _send_event("import_start", {
+            "requestId": request_id,
+            "filename": filename,
+            "totalSize": total_size
+        })
+
+        with open(source_path, "rb") as fsrc:
+            with open(dest_path, "wb") as fdst:
+                while True:
+                    chunk = fsrc.read(chunk_size)
+                    if not chunk:
+                        break
+                    fdst.write(chunk)
+                    bytes_copied += len(chunk)
+                    progress = int((bytes_copied / total_size) * 100) if total_size > 0 else 0
+                    _send_event("import_progress", {
+                        "requestId": request_id,
+                        "filename": filename,
+                        "progress": progress
+                    })
+
+        # Cleanup if the file is in incoming/temp directory (from Content Hub)
+        is_incoming = "incoming" in source_path or "/tmp/" in source_path
+        if is_incoming:
+            try:
+                os.remove(source_path)
+            except OSError:
+                pass
+
+        _send_event("import_complete", {
+            "requestId": request_id,
+            "filename": filename
+        })
+
+    except Exception as e:
+        log_error("Error importing model: " + str(e))
+        _send_event("import_error", {
+            "requestId": request_id,
+            "error": str(e)
+        })
+
+
+def import_local_model(file_url):
+    request_id = "import-" + str(int(time.time()))
+    thread = threading.Thread(
+        target=import_local_model_thread,
+        args=(file_url, request_id),
+        daemon=True
+    )
+    thread.start()
+    return request_id
+
+
 def initialize():
     _ensure_models_dir()
     init_db()
@@ -1451,14 +1648,17 @@ def initialize():
         LLAMA_CLI_READY = True
     else:
         LLAMA_CLI_READY = False
-        thread = threading.Thread(target=download_llama_cli_in_background)
-        thread.daemon = True
-        thread.start()
         
+    is_desktop = True
+    if os.environ.get("APP_ID") or os.environ.get("LOMIRI_APP_LAUNCH_ENV"):
+        is_desktop = False
+
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
-        "debug": DEBUG_MODE
+        "llamaCliReady": LLAMA_CLI_READY,
+        "debug": DEBUG_MODE,
+        "isDesktop": is_desktop
     }
 

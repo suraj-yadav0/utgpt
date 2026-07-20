@@ -9,6 +9,7 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import QtQuick.Controls 2.2 as QQC2
+import "../components"
 
 Page {
     id: chatPage
@@ -363,7 +364,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: "#f5f5f7"
+        color: root.bgColor
         z: -1
     }
 
@@ -382,8 +383,8 @@ Page {
             id: modelSelectionBar
             Layout.fillWidth: true
             Layout.preferredHeight: units.gu(6.5)
-            color: "#FFFFFF"
-            border.color: "#E2E8F0"
+            color: root.cardColor
+            border.color: root.cardBorderColor
             border.width: 1
             radius: units.gu(1.5)
 
@@ -398,7 +399,7 @@ Page {
                     width: units.gu(3.5)
                     height: units.gu(3.5)
                     radius: units.gu(1)
-                    color: root.availableModels.length > 0 ? root.themeBgLight : "#FFF5F5"
+                    color: root.availableModels.length > 0 ? root.themeBgLight : (root.isDark ? "#4C1D1D" : "#FFF5F5")
                     Layout.alignment: Qt.AlignVCenter
 
                     Icon {
@@ -406,7 +407,7 @@ Page {
                         name: root.availableModels.length > 0 ? "message" : "dialog-warning"
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: root.availableModels.length > 0 ? root.themeColor : "#E53E3E"
+                        color: root.availableModels.length > 0 ? root.themeTextColor : "#E53E3E"
                     }
                 }
 
@@ -420,12 +421,12 @@ Page {
                     Label {
                         text: i18n.tr("Model:")
                         font.bold: true
-                        color: "#4A5568"
+                        color: root.bodyTextColor
                         fontSize: "small"
                         Layout.alignment: Qt.AlignVCenter
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: chatModelSelector
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
@@ -494,7 +495,7 @@ Page {
                     width: units.gu(4)
                     height: units.gu(4)
                     radius: width / 2
-                    color: model.role === "user" ? root.themeBgLight : "#E2E8F0"
+                    color: model.role === "user" ? root.themeBgLight : (root.isDark ? "#2D2D2D" : "#E2E8F0")
                     anchors.top: parent.top
                     anchors.topMargin: units.gu(0.5)
                     anchors.left: model.role === "assistant" ? parent.left : undefined
@@ -503,7 +504,7 @@ Page {
                     Label {
                         anchors.centerIn: parent
                         text: model.role === "user" ? "U" : "AI"
-                        color: model.role === "user" ? root.themeColor : "#4A5568"
+                        color: model.role === "user" ? root.themeTextColor : root.bodyTextColor
                         font.bold: true
                         fontSize: "small"
                     }
@@ -528,8 +529,8 @@ Page {
                         width: Math.min(messageText.implicitWidth + units.gu(3.5), messageList.width * 0.76)
                         height: messageText.implicitHeight + units.gu(2)
                         radius: units.gu(1.5)
-                        color: model.role === "user" ? root.themeColor : "#FFFFFF"
-                        border.color: model.role === "user" ? "transparent" : "#E2E8F0"
+                        color: model.role === "user" ? root.themeColor : root.assistantBubbleColor
+                        border.color: model.role === "user" ? "transparent" : root.assistantBubbleBorderColor
                         border.width: model.role === "user" ? 0 : 1
 
                         Label {
@@ -539,7 +540,7 @@ Page {
                             text: model.text
                             wrapMode: Text.Wrap
                             textFormat: model.role === "assistant" ? (typeof Text.MarkdownText !== "undefined" ? Text.MarkdownText : Text.AutoText) : Text.PlainText
-                            color: model.role === "user" ? "#FFFFFF" : "#1E293B"
+                            color: model.role === "user" ? "#FFFFFF" : root.assistantBubbleTextColor
                         }
                     }
 
@@ -553,8 +554,8 @@ Page {
                             width: units.gu(9)
                             height: units.gu(3)
                             radius: units.gu(0.6)
-                            color: isCopied ? "#E6FFFA" : "#FFFFFF"
-                            border.color: isCopied ? "#319795" : "#E2E8F0"
+                            color: isCopied ? (root.isDark ? "#1E2D2A" : "#E6FFFA") : root.cardColor
+                            border.color: isCopied ? "#319795" : root.cardBorderColor
                             border.width: 1
 
                             property bool isCopied: false
@@ -573,12 +574,12 @@ Page {
                                     name: copyBtn.isCopied ? "ok" : "edit-copy"
                                     width: units.gu(1.6)
                                     height: units.gu(1.6)
-                                    color: copyBtn.isCopied ? "#319795" : "#4A5568"
+                                    color: copyBtn.isCopied ? (root.isDark ? "#4FD1C5" : "#319795") : root.bodyTextColor
                                 }
 
                                 Label {
                                     text: copyBtn.isCopied ? i18n.tr("Copied!") : i18n.tr("Copy")
-                                    color: copyBtn.isCopied ? "#319795" : "#4A5568"
+                                    color: copyBtn.isCopied ? (root.isDark ? "#4FD1C5" : "#319795") : root.bodyTextColor
                                     fontSize: "x-small"
                                     font.bold: true
                                 }
@@ -606,8 +607,8 @@ Page {
                             width: units.gu(9)
                             height: units.gu(3)
                             radius: units.gu(0.6)
-                            color: "#FFFFFF"
-                            border.color: "#E2E8F0"
+                            color: root.cardColor
+                            border.color: root.cardBorderColor
                             border.width: 1
 
                             RowLayout {
@@ -618,12 +619,12 @@ Page {
                                     name: "reload"
                                     width: units.gu(1.6)
                                     height: units.gu(1.6)
-                                    color: "#4A5568"
+                                    color: root.bodyTextColor
                                 }
 
                                 Label {
                                     text: i18n.tr("Redo")
-                                    color: "#4A5568"
+                                    color: root.bodyTextColor
                                     fontSize: "x-small"
                                     font.bold: true
                                 }
@@ -648,8 +649,8 @@ Page {
             id: inputCard
             Layout.fillWidth: true
             Layout.preferredHeight: units.gu(7.5)
-            color: "#FFFFFF"
-            border.color: "#E2E8F0"
+            color: root.cardColor
+            border.color: root.cardBorderColor
             border.width: 1
             radius: units.gu(1.5)
 
@@ -674,7 +675,7 @@ Page {
                     Layout.preferredWidth: units.gu(4.5)
                     Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? "#E2E8F0" : root.themeColor)
+                    color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? (root.isDark ? "#2D2D2D" : "#E2E8F0") : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
 
                     Icon {
@@ -682,7 +683,7 @@ Page {
                         name: chatPage.isResponding ? "media-playback-stop" : "send"
                         width: units.gu(2.4)
                         height: units.gu(2.4)
-                        color: sendButton.enabled ? "white" : "#94A3B8"
+                        color: sendButton.enabled ? "white" : (root.isDark ? "#4A5568" : "#94A3B8")
                     }
 
                     onClicked: {
@@ -717,7 +718,7 @@ Page {
                 name: "message"
                 width: units.gu(4)
                 height: units.gu(4)
-                color: root.themeColor
+                color: root.themeTextColor
             }
         }
 
@@ -726,7 +727,7 @@ Page {
             text: i18n.tr("Welcome to UTGPT")
             font.bold: true
             fontSize: "large"
-            color: "#1E293B"
+            color: root.primaryTextColor
         }
 
         Label {
@@ -735,7 +736,7 @@ Page {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
             text: i18n.tr("Ask anything! Choose a model above or type a message to start the conversation.")
-            color: "#64748B"
+            color: root.secondaryTextColor
             fontSize: "small"
         }
 
@@ -745,7 +746,7 @@ Page {
 
             Label {
                 text: i18n.tr("Try asking:")
-                color: "#94A3B8"
+                color: root.tertiaryTextColor
                 fontSize: "x-small"
                 font.bold: true
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -761,7 +762,7 @@ Page {
                     id: q1
                     Layout.fillWidth: true
                     text: i18n.tr("What is Ubuntu Touch?")
-                    color: "#F1F5F9"
+                    color: root.tryAskingButtonColor
                     onClicked: {
                         composer.text = q1.text
                         chatPage.sendMessage()
@@ -772,7 +773,7 @@ Page {
                     id: q2
                     Layout.fillWidth: true
                     text: i18n.tr("Tell me a joke!")
-                    color: "#F1F5F9"
+                    color: root.tryAskingButtonColor
                     onClicked: {
                         composer.text = q2.text
                         chatPage.sendMessage()
@@ -783,7 +784,7 @@ Page {
                     id: q3
                     Layout.fillWidth: true
                     text: i18n.tr("A fun recipe in 10 minutes")
-                    color: "#F1F5F9"
+                    color: root.tryAskingButtonColor
                     onClicked: {
                         composer.text = q3.text
                         chatPage.sendMessage()
@@ -794,7 +795,7 @@ Page {
                     id: q4
                     Layout.fillWidth: true
                     text: i18n.tr("2 min story")
-                    color: "#F1F5F9"
+                    color: root.tryAskingButtonColor
                     onClicked: {
                         composer.text = q4.text
                         chatPage.sendMessage()

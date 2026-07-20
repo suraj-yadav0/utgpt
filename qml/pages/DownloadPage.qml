@@ -8,6 +8,7 @@
 import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
+import "../components"
 
 Page {
     id: downloadPage
@@ -139,6 +140,10 @@ Page {
         })
     }
 
+    function importModel(fileUrl) {
+        python.call("backend.import_local_model", [fileUrl])
+    }
+
 
     ListModel {
         id: modelsList
@@ -155,6 +160,34 @@ Page {
             // PyOtherSide received signal passes arguments wrapped in a JavaScript array
             var data = (result && result.length > 0) ? result[0] : null
             if (!data || !data.event || !data.payload) {
+                return
+            }
+
+            if (data.event === "import_start") {
+                importOverlay.visible = true
+                importFilenameLabel.text = data.payload.filename
+                importProgressBar.value = 0
+                importProgressLabel.text = "0%"
+                return
+            } else if (data.event === "import_progress") {
+                importOverlay.visible = true
+                importProgressBar.value = data.payload.progress
+                importProgressLabel.text = data.payload.progress + "%"
+                return
+            } else if (data.event === "import_complete") {
+                importOverlay.visible = false
+                if (pickerLoader.item && typeof pickerLoader.item.finalizeTransfer === "function") {
+                    pickerLoader.item.finalizeTransfer()
+                }
+                root.refreshModels()
+                root.showNotification(i18n.tr("Import Successful"), i18n.tr("Successfully imported ") + data.payload.filename + i18n.tr(". You can now select it as the Active Model in Settings."))
+                return
+            } else if (data.event === "import_error") {
+                importOverlay.visible = false
+                if (pickerLoader.item && typeof pickerLoader.item.finalizeTransfer === "function") {
+                    pickerLoader.item.finalizeTransfer()
+                }
+                root.showError(i18n.tr("Failed to import model: ") + data.payload.error)
                 return
             }
 
@@ -234,6 +267,13 @@ Page {
     onBackendReadyChanged: {
         if (backendReady) {
             populateModelsFromCatalog()
+            if (root.isDesktop) {
+                console.log("QML_LOG: Backend ready. Running on desktop, loading DesktopFilePicker...")
+                pickerLoader.source = "../components/DesktopFilePicker.qml"
+            } else {
+                console.log("QML_LOG: Backend ready. Running on device, loading LomiriFilePicker...")
+                pickerLoader.source = "../components/LomiriFilePicker.qml"
+            }
         }
     }
     
@@ -252,7 +292,7 @@ Page {
 
     Rectangle {
         anchors.fill: parent
-        color: "#FFFFFF"
+        color: root.bgColor
         z: -1
     }
 
@@ -264,6 +304,86 @@ Page {
         anchors.topMargin: units.gu(1.5)
         spacing: units.gu(1.5)
 
+        // Import Local GGUF Card
+        Rectangle {
+            id: importLocalCard
+            Layout.fillWidth: true
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
+            Layout.preferredHeight: units.gu(12.5)
+            color: root.isDark ? "#1A1A1A" : "#F8FAFC"
+            border.color: root.cardBorderColor
+            border.width: 1
+            radius: units.gu(1.5)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(2)
+                anchors.rightMargin: units.gu(2)
+                spacing: units.gu(1.5)
+
+                Icon {
+                    name: "document-open"
+                    width: units.gu(2.8)
+                    height: units.gu(2.8)
+                    color: root.themeTextColor
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: units.gu(0.5)
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Label {
+                        text: i18n.tr("Import Local Model")
+                        font.bold: true
+                        color: root.primaryTextColor
+                    }
+                    Label {
+                        text: i18n.tr("Load a .gguf file from your Downloads folder")
+                        color: root.secondaryTextColor
+                        fontSize: "small"
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                    RowLayout {
+                        spacing: units.gu(0.5)
+                        Layout.fillWidth: true
+                        Icon {
+                            name: "info"
+                            width: units.gu(1.6)
+                            height: units.gu(1.6)
+                            color: "#D97706"
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                        Label {
+                            text: i18n.tr("Use Instruct/Chat models. Avoid Base/autocompletion models.")
+                            color: "#D97706"
+                            fontSize: "x-small"
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+                }
+
+                Button {
+                    text: i18n.tr("Import GGUF")
+                    color: root.themeColor
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: {
+                        if (pickerLoader.item) {
+                            pickerLoader.item.open()
+                        } else {
+                            pickerLoader.source = "../components/LomiriFilePicker.qml"
+                        }
+                    }
+                }
+            }
+        }
+
         // Search Bar Card
         Rectangle {
             id: searchBarCard
@@ -271,8 +391,8 @@ Page {
             Layout.leftMargin: units.gu(1.5)
             Layout.rightMargin: units.gu(1.5)
             Layout.preferredHeight: units.gu(6.5)
-            color: "#FFFFFF"
-            border.color: "#E2E8F0"
+            color: root.cardColor
+            border.color: root.cardBorderColor
             border.width: 1
             radius: units.gu(1.5)
 
@@ -286,7 +406,7 @@ Page {
                     name: "search"
                     width: units.gu(2.2)
                     height: units.gu(2.2)
-                    color: "#94A3B8"
+                    color: root.tertiaryTextColor
                 }
 
                 TextField {
@@ -302,20 +422,22 @@ Page {
             }
         }
 
-        ListView {
+        StyledListView {
             id: modelsListView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            spacing: 0
+            Layout.leftMargin: units.gu(1.5)
+            Layout.rightMargin: units.gu(1.5)
+            Layout.bottomMargin: units.gu(1.5)
+            expandToContent: false
             model: modelsList
 
             delegate: ListItem {
                 id: modelListItem
-                width: modelsListView.width
-                height: cardLayout.implicitHeight + units.gu(4.0)
+                width: parent.width
+                implicitHeight: cardLayout.implicitHeight + units.gu(4.0)
                 highlightColor: "transparent"
-                divider.visible: true
+                divider.visible: index < modelsList.count - 1
 
                 leadingActions: model.ready ? deleteActions : null
                 trailingActions: {
@@ -340,7 +462,7 @@ Page {
                     id: downloadActions
                     actions: [
                         Action {
-                            iconSource: "../assets/Download.svg"
+                            iconSource: root.isDark ? "../../assets/Download-white.svg" : "../../assets/Download.svg"
                             text: i18n.tr("Download")
                             onTriggered: downloadPage.startDownload(index)
                         }
@@ -381,12 +503,9 @@ Page {
 
                 RowLayout {
                     id: cardLayout
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.leftMargin: units.gu(1.5)
-                    anchors.rightMargin: units.gu(1.5)
-                    anchors.topMargin: units.gu(2.0)
+                    x: units.gu(1.5)
+                    y: units.gu(2.0)
+                    width: parent.width - units.gu(3.0)
                     spacing: units.gu(1.5)
 
                     // Text & Status Info Column
@@ -396,31 +515,65 @@ Page {
 
                         RowLayout {
                             spacing: units.gu(1)
-
-                            // Compatibility Blinker / status circle
-                            Rectangle {
-                                width: units.gu(1.2)
-                                height: units.gu(1.2)
-                                radius: width / 2
-                                color: {
-                                    if (model.compatibility === "green") return "#2ECC71"
-                                    if (model.compatibility === "yellow") return "#F1C40F"
-                                    return "#E74C3C"
-                                }
-                                visible: true
-                                Layout.alignment: Qt.AlignVCenter
-
-                                SequentialAnimation on opacity {
-                                    loops: Animation.Infinite
-                                    PropertyAnimation { to: 0.3; duration: 2000; easing.type: Easing.InOutQuad }
-                                    PropertyAnimation { to: 1.0; duration: 2000; easing.type: Easing.InOutQuad }
-                                }
-                            }
+                            Layout.fillWidth: true
 
                             Label {
                                 text: model.name
                                 font.bold: true
-                                color: "#1E293B"
+                                color: root.primaryTextColor
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            // Compatibility Badge Pill
+                            Rectangle {
+                                implicitWidth: statusRow.implicitWidth + units.gu(2.0)
+                                implicitHeight: statusRow.implicitHeight + units.gu(0.8)
+                                radius: units.gu(1)
+                                color: {
+                                    if (model.compatibility === "green") return root.isDark ? "#162E21" : "#E6F4EA"
+                                    if (model.compatibility === "yellow") return root.isDark ? "#2D2810" : "#FEF7E0"
+                                    return root.isDark ? "#2C1617" : "#FCE8E6"
+                                }
+                                border.color: {
+                                    if (model.compatibility === "green") return root.isDark ? "#214E34" : "#CEEAD6"
+                                    if (model.compatibility === "yellow") return root.isDark ? "#4C4119" : "#FEEFC3"
+                                    return root.isDark ? "#4D1B1E" : "#FAD2CF"
+                                }
+                                border.width: units.dp(1)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                RowLayout {
+                                    id: statusRow
+                                    anchors.centerIn: parent
+                                    spacing: units.gu(0.6)
+
+                                    Rectangle {
+                                        width: units.gu(0.7)
+                                        height: units.gu(0.7)
+                                        radius: width / 2
+                                        color: {
+                                            if (model.compatibility === "green") return root.isDark ? "#2ECC71" : "#137333"
+                                            if (model.compatibility === "yellow") return root.isDark ? "#F1C40F" : "#B06000"
+                                            return root.isDark ? "#E74C3C" : "#C5221F"
+                                        }
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+
+                                    Label {
+                                        id: compatibilityLabel
+                                        text: model.compatibilityText
+                                        font.bold: true
+                                        fontSize: "xx-small"
+                                        color: {
+                                            if (model.compatibility === "green") return root.isDark ? "#2ECC71" : "#137333"
+                                            if (model.compatibility === "yellow") return root.isDark ? "#F1C40F" : "#B06000"
+                                            return root.isDark ? "#E74C3C" : "#C5221F"
+                                        }
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+                                }
                             }
                         }
 
@@ -428,7 +581,7 @@ Page {
                             Layout.fillWidth: true
                             wrapMode: Text.Wrap
                             text: model.size + " - " + model.description
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                         }
 
@@ -451,7 +604,7 @@ Page {
                                 return i18n.tr("Downloading: ") + Math.round(model.progress * 100) + "%"
                             }
                             visible: model.downloading || model.paused
-                            color: "#475569"
+                            color: root.bodyTextColor
                             fontSize: "small"
                         }
                     }
@@ -466,7 +619,7 @@ Page {
                         }
                         width: units.gu(2.2)
                         height: units.gu(2.2)
-                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeColor : "#94A3B8")
+                        color: model.ready ? "#2ECC71" : (model.downloading ? root.themeTextColor : root.tertiaryTextColor)
                         Layout.alignment: Qt.AlignVCenter
 
                         SequentialAnimation on opacity {
@@ -495,4 +648,95 @@ Page {
             }
         }
     }
+
+    Loader {
+        id: pickerLoader
+        anchors.fill: parent
+        onStatusChanged: {
+            if (status === Loader.Error) {
+                if (source.toString().indexOf("LomiriFilePicker.qml") >= 0) {
+                    console.log("Failed to load Lomiri picker, trying Desktop picker...")
+                    source = "../components/DesktopFilePicker.qml"
+                } else {
+                    console.log("Failed to load Desktop picker as well.")
+                }
+            }
+        }
+        
+        onLoaded: {
+            if (item) {
+                item.fileSelected.connect(function(fileUrl) {
+                    downloadPage.importModel(fileUrl)
+                })
+            }
+        }
+    }
+
+    // Import Progress Overlay
+    Rectangle {
+        id: importOverlay
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.5)
+        visible: false
+        z: 1000
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.AllButtons
+            onClicked: {}
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width - units.gu(8)
+            height: units.gu(18)
+            color: root.cardColor
+            radius: units.gu(1.5)
+            border.color: root.cardBorderColor
+            border.width: 1
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: units.gu(2)
+                spacing: units.gu(1.5)
+
+                Label {
+                    text: i18n.tr("Importing Model...")
+                    font.bold: true
+                    fontSize: "large"
+                    color: root.primaryTextColor
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Label {
+                    id: importFilenameLabel
+                    text: ""
+                    fontSize: "small"
+                    color: root.secondaryTextColor
+                    Layout.alignment: Qt.AlignHCenter
+                    elide: Text.ElideMiddle
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                ProgressBar {
+                    id: importProgressBar
+                    Layout.fillWidth: true
+                    minimumValue: 0
+                    maximumValue: 100
+                    value: 0
+                }
+
+                Label {
+                    id: importProgressLabel
+                    text: "0%"
+                    color: root.bodyTextColor
+                    Layout.alignment: Qt.AlignHCenter
+                }
+            }
+        }
+    }
+
+
 }

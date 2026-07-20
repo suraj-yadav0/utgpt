@@ -9,14 +9,23 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import QtQuick.Controls 2.2 as QQC2
 import Lomiri.Components 1.3
+import "../components"
 
 Page {
     id: settingsPage
     signal toggleSidebar()
 
+    property string currentSection: ""
+    property string themeMode: "system"
+
     header: PageHeader {
         id: settingsHeader
-        title: i18n.tr("Settings")
+        title: settingsPage.currentSection === "" ? i18n.tr("Settings") :
+               settingsPage.currentSection === "model" ? i18n.tr("Active Model") :
+               settingsPage.currentSection === "engine" ? i18n.tr("Inference Engine") :
+               settingsPage.currentSection === "generation" ? i18n.tr("Generation Settings") :
+               settingsPage.currentSection === "performance" ? i18n.tr("Performance Settings") :
+               settingsPage.currentSection === "theme" ? i18n.tr("Theme") : i18n.tr("Storage & History")
         StyleHints {
             backgroundColor: root.themeColor
             foregroundColor: "white"
@@ -24,10 +33,16 @@ Page {
         leadingActionBar.numberOfSlots: 1
         leadingActionBar.actions: [
             Action {
-                iconName: "navigation-menu"
-                text: i18n.tr("Menu")
+                iconName: settingsPage.currentSection === "" ? "navigation-menu" : "back"
+                text: settingsPage.currentSection === "" ? i18n.tr("Menu") : i18n.tr("Back")
                 visible: true
-                onTriggered: settingsPage.toggleSidebar()
+                onTriggered: {
+                    if (settingsPage.currentSection === "") {
+                        settingsPage.toggleSidebar()
+                    } else {
+                        settingsPage.currentSection = ""
+                    }
+                }
             }
         ]
         NavigationRow {
@@ -40,6 +55,8 @@ Page {
     property var python
     property bool backendReady: false
     property string selectedModel: ""
+    property string engineStatus: "checking"
+    property string engineError: ""
     
     onSelectedModelChanged: {
         var info = getModelInfo(selectedModel)
@@ -68,6 +85,24 @@ Page {
         python.call("backend.get_free_storage", [], function(result) {
             freeStorage = result || i18n.tr("Storage unavailable")
         })
+    }
+
+    function refreshEngineStatus() {
+        if (!backendReady) return;
+        python.call("backend.get_inference_engine_status", [], function(result) {
+            if (result) {
+                engineStatus = result.status
+                engineError = result.error
+            }
+        })
+    }
+
+    Timer {
+        id: statusTimer
+        interval: 1000
+        repeat: true
+        running: engineStatus === "downloading"
+        onTriggered: refreshEngineStatus()
     }
 
     function snapTemperature(value) {
@@ -187,19 +222,25 @@ Page {
         if (backendReady) {
             refreshModels()
             refreshStorage()
+            refreshEngineStatus()
         }
     }
 
     onVisibleChanged: {
-        if (visible && backendReady) {
-            refreshModels()
-            refreshStorage()
+        if (visible) {
+            if (backendReady) {
+                refreshModels()
+                refreshStorage()
+                refreshEngineStatus()
+            }
+        } else {
+            currentSection = ""
         }
     }
 
     Rectangle {
         anchors.fill: parent
-        color: "#f5f5f7"
+        color: root.bgColor
         z: -1
     }
 
@@ -223,12 +264,92 @@ Page {
             }
             spacing: units.gu(2)
 
+            // MAIN SETTINGS LIST
+            StyledListView {
+                id: listMenuContainer
+                width: parent.width
+                expandToContent: true
+                visible: settingsPage.currentSection === ""
+
+                model: ListModel {
+                    ListElement { title: "Active Model"; icon: "message"; section: "model" }
+                    ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
+                    ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
+                    ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
+                    ListElement { title: "Theme"; icon: "preferences-desktop-display-symbolic"; section: "theme" }
+                    ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
+                }
+
+                delegate: Item {
+                    width: listMenuContainer.width
+                    height: units.gu(7.5)
+
+                    Rectangle {
+                        anchors.fill: parent
+                        color: mouseArea.pressed ? (root.isDark ? "#2A2A2A" : "#E2E8F0") : (mouseArea.containsMouse ? (root.isDark ? "#242424" : "#F1F5F9") : "transparent")
+                        Behavior on color { ColorAnimation { duration: 100 } }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: units.gu(2)
+                        anchors.rightMargin: units.gu(2)
+                        spacing: units.gu(2)
+
+                        Icon {
+                            name: model.icon
+                            width: units.gu(2.6)
+                            height: units.gu(2.6)
+                            color: root.themeTextColor
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: i18n.tr(model.title)
+                            color: root.primaryTextColor
+                            font.bold: true
+                            fontSize: "medium"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Icon {
+                            name: "next"
+                            width: units.gu(2.0)
+                            height: units.gu(2.0)
+                            color: root.secondaryTextColor
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: units.gu(6.6)
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: root.isDark ? "#2D2D2D" : "#E2E8F0"
+                        visible: index < 5
+                    }
+
+                    MouseArea {
+                        id: mouseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            settingsPage.currentSection = model.section
+                        }
+                    }
+                }
+            }
+
             // Card 1: Active Model
             Rectangle {
                 width: parent.width
                 height: activeModelColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                visible: settingsPage.currentSection === "model"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -241,17 +362,17 @@ Page {
                     Label {
                         text: i18n.tr("Active Model")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("No models downloaded yet")
                         visible: settingsPage.availableModels.length === 0
-                        color: "#64748B"
+                        color: root.secondaryTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: modelSelector
                         width: parent.width
                         visible: settingsPage.availableModels.length > 0
@@ -271,11 +392,11 @@ Page {
             Rectangle {
                 width: parent.width
                 height: modelSpecsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
-                visible: settingsPage.selectedModel !== ""
+                visible: settingsPage.currentSection === "model" && settingsPage.selectedModel !== ""
 
                 Column {
                     id: modelSpecsColumn
@@ -286,7 +407,7 @@ Page {
                     Label {
                         text: i18n.tr("Model Specifications")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     GridLayout {
@@ -299,78 +420,163 @@ Page {
 
                         Label {
                             text: i18n.tr("Model Name:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.name : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Developer:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.developer : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("File Size:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.size : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Context Window:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.context : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Quantization:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                         }
                         Label {
                             text: parent.info ? parent.info.quant : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                         }
 
                         Label {
                             text: i18n.tr("Recommended For:")
-                            color: "#64748B"
+                            color: root.secondaryTextColor
                             fontSize: "small"
                             font.bold: true
                             Layout.alignment: Qt.AlignTop
                         }
                         Label {
                             text: parent.info ? parent.info.usage : ""
-                            color: "#1E293B"
+                            color: root.primaryTextColor
                             fontSize: "small"
                             wrapMode: Text.Wrap
-                            Layout.fillWidth: true
                         }
+                    }
+                }
+            }
+
+            // Card: Inference Engine Status
+            Rectangle {
+                width: parent.width
+                height: engineStatusColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "engine"
+                color: root.cardColor
+                border.color: root.cardBorderColor
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: engineStatusColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Inference Engine")
+                        font.bold: true
+                        color: root.primaryTextColor
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: units.gu(1)
+
+                        Rectangle {
+                            width: units.gu(1.2)
+                            height: units.gu(1.2)
+                            radius: height / 2
+                            color: engineStatus === "ready" ? "#22C55E" : (engineStatus === "downloading" ? "#3B82F6" : "#EF4444")
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: {
+                                if (engineStatus === "ready") return i18n.tr("Ready");
+                                if (engineStatus === "downloading") return i18n.tr("Downloading...");
+                                if (engineStatus === "error") return i18n.tr("Error");
+                                return i18n.tr("Not Downloaded");
+                            }
+                            font.bold: true
+                            color: root.bodyTextColor
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Button {
+                            text: engineStatus === "error" ? i18n.tr("Retry") : i18n.tr("Download")
+                            visible: engineStatus !== "ready" && engineStatus !== "downloading"
+                            color: root.themeColor
+                            onClicked: {
+                                python.call("backend.start_inference_engine_download", [], function(success) {
+                                    refreshEngineStatus()
+                                })
+                            }
+                        }
+                        
+                        ActivityIndicator {
+                            running: engineStatus === "downloading"
+                            visible: engineStatus === "downloading"
+                            width: units.gu(2)
+                            height: units.gu(2)
+                        }
+                    }
+
+                    Label {
+                        text: engineError
+                        color: "#EF4444"
+                        fontSize: "small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
+                        visible: engineStatus === "error" && engineError !== ""
+                    }
+
+                    Label {
+                        text: i18n.tr("Required to run local .gguf models on your device.")
+                        color: root.secondaryTextColor
+                        fontSize: "x-small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
+                        visible: engineStatus !== "ready"
                     }
                 }
             }
@@ -379,8 +585,9 @@ Page {
             Rectangle {
                 width: parent.width
                 height: genSettingsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                visible: settingsPage.currentSection === "generation"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -393,12 +600,12 @@ Page {
                     Label {
                         text: i18n.tr("Generation Settings")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("Temperature") + ": " + settingsPage.temperature.toFixed(1)
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -422,7 +629,7 @@ Page {
 
                     Label {
                         text: i18n.tr("Max response length") + ": " + settingsPage.maxTokens + i18n.tr(" tokens")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -453,8 +660,9 @@ Page {
             Rectangle {
                 width: parent.width
                 height: perfSettingsColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                visible: settingsPage.currentSection === "performance"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -467,12 +675,12 @@ Page {
                     Label {
                         text: i18n.tr("Performance Settings")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: i18n.tr("CPU Threads") + ": " + settingsPage.threads
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
@@ -496,7 +704,7 @@ Page {
                     
                     Label {
                         text: i18n.tr("Recommended: 4 threads on octa-core devices to avoid overheating and thermal throttling.")
-                        color: "#94A3B8"
+                        color: root.tertiaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
@@ -504,11 +712,11 @@ Page {
 
                     Label {
                         text: i18n.tr("Context Size Limit")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: ctxSelector
                         width: parent.width
                         model: ["512", "1024", "2048", "4096", "8192"]
@@ -523,11 +731,11 @@ Page {
 
                     Label {
                         text: i18n.tr("Flash Attention")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: faSelector
                         width: parent.width
                         model: ["auto", "on", "off"]
@@ -539,11 +747,11 @@ Page {
 
                     Label {
                         text: i18n.tr("KV Cache Quantization")
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
 
-                    QQC2.ComboBox {
+                    StyledComboBox {
                         id: kvSelector
                         width: parent.width
                         model: ["f16", "q8_0", "q4_0"]
@@ -555,10 +763,54 @@ Page {
 
                     Label {
                         text: i18n.tr("Recommended: q8_0 or q4_0 to significantly reduce memory transfer and speed up token generation on mobile CPUs.")
-                        color: "#94A3B8"
+                        color: root.tertiaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
+                    }
+                }
+            }
+
+            // Card: Theme Settings
+            Rectangle {
+                width: parent.width
+                height: themeSettingsColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "theme"
+                color: root.cardColor
+                border.color: root.cardBorderColor
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: themeSettingsColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Theme Mode")
+                        font.bold: true
+                        color: root.primaryTextColor
+                    }
+
+                    StyledComboBox {
+                        id: themeSelector
+                        width: parent.width
+                        model: [i18n.tr("System"), i18n.tr("Light"), i18n.tr("Dark")]
+                        currentIndex: {
+                            if (settingsPage.themeMode === "light") return 1;
+                            if (settingsPage.themeMode === "dark") return 2;
+                            return 0; // "system"
+                        }
+                        onActivated: {
+                            if (currentIndex === 1) {
+                                settingsPage.themeMode = "light"
+                            } else if (currentIndex === 2) {
+                                settingsPage.themeMode = "dark"
+                            } else {
+                                settingsPage.themeMode = "system"
+                            }
+                        }
                     }
                 }
             }
@@ -567,8 +819,9 @@ Page {
             Rectangle {
                 width: parent.width
                 height: storageColumn.implicitHeight + units.gu(3)
-                color: "#FFFFFF"
-                border.color: "#E2E8F0"
+                visible: settingsPage.currentSection === "storage"
+                color: root.cardColor
+                border.color: root.cardBorderColor
                 border.width: 1
                 radius: units.gu(1.5)
 
@@ -581,12 +834,12 @@ Page {
                     Label {
                         text: i18n.tr("Storage")
                         font.bold: true
-                        color: "#1E293B"
+                        color: root.primaryTextColor
                     }
 
                     Label {
                         text: settingsPage.freeStorage
-                        color: "#475569"
+                        color: root.bodyTextColor
                         fontSize: "small"
                     }
                 }
@@ -595,6 +848,7 @@ Page {
 
             Button {
                 width: parent.width
+                visible: settingsPage.currentSection === "storage"
                 text: i18n.tr("Clear chat history")
                 color: "#C7162B"
                 onClicked: settingsPage.clearChat()

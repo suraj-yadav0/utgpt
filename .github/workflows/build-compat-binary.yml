@@ -1,0 +1,86 @@
+name: Build and Release UTGPT App & Binary
+
+on:
+  release:
+    types: [published, edited]
+
+jobs:
+  build:
+    name: Build UTGPT Click Package & Compatible Binary
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Clickable & dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc-aarch64-linux-gnu g++-aarch64-linux-gnu git tar python3-pip python3-setuptools
+          pip3 install --user clickable-ut
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build Click Package
+        run: |
+          clickable build
+
+      - name: Clone llama.cpp
+        run: |
+          git clone https://github.com/ggml-org/llama.cpp.git
+          cd llama.cpp
+          # Checkout stable tag matching the app's default tag
+          git checkout b9874
+
+      - name: Configure CMake for Cross-Compilation
+        run: |
+          cd llama.cpp
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CPU_ARM_ARCH=armv8-a \
+            -DGGML_SVE=OFF \
+            -DGGML_ARM_FMA=OFF \
+            -DGGML_FP16_TO_FP32=ON \
+            -DBUILD_SHARED_LIBS=ON
+
+      - name: Build llama.cpp
+        run: |
+          cd llama.cpp/build
+          cmake --build . --config Release --target llama-cli -j$(nproc)
+          cmake --build . --config Release --target llama-completion -j$(nproc)
+
+      - name: Package Binaries
+        run: |
+          cd llama.cpp/build
+          mkdir -p dist
+          cp bin/llama-cli dist/
+          cp bin/llama-completion dist/
+          cp -d src/libllama.so* dist/ || true
+          cp -d ggml/src/libggml.so* dist/ || true
+          cp -d ggml/src/libggml-base.so* dist/ || true
+          cp -d ggml/src/libggml-cpu.so* dist/ || true
+          cp -d ggml/src/libggml-rpc.so* dist/ || true
+          cp -d ggml/src/libmtmd.so* dist/ || true
+          cp -d src/libllama-batched-bench-impl.so dist/ || true
+          cp -d src/libllama-bench-impl.so dist/ || true
+          cp -d src/libllama-cli-impl.so dist/ || true
+          cp -d src/libllama-completion-impl.so dist/ || true
+          cp -d src/libllama-fit-params-impl.so dist/ || true
+          cp -d src/libllama-perplexity-impl.so dist/ || true
+          cp -d src/libllama-quantize-impl.so dist/ || true
+          cp -d src/libllama-server-impl.so dist/ || true
+          cd dist
+          tar -czf ../../../llama-compat-bin-ubuntu-arm64.tar.gz *
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            llama-compat-bin-ubuntu-arm64.tar.gz
+            *.click
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
