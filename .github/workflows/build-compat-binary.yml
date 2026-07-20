@@ -8,6 +8,8 @@ jobs:
   build:
     name: Build UTGPT Click Package & Compatible Binary
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -23,6 +25,7 @@ jobs:
       - name: Build Click Package
         run: |
           clickable build
+          find build -name "*.click" -exec cp {} . \;
 
       - name: Clone llama.cpp
         run: |
