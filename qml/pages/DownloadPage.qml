@@ -515,31 +515,65 @@ Page {
 
                         RowLayout {
                             spacing: units.gu(1)
-
-                            // Compatibility Blinker / status circle
-                            Rectangle {
-                                width: units.gu(1.2)
-                                height: units.gu(1.2)
-                                radius: width / 2
-                                color: {
-                                    if (model.compatibility === "green") return "#2ECC71"
-                                    if (model.compatibility === "yellow") return "#F1C40F"
-                                    return "#E74C3C"
-                                }
-                                visible: true
-                                Layout.alignment: Qt.AlignVCenter
-
-                                SequentialAnimation on opacity {
-                                    loops: Animation.Infinite
-                                    PropertyAnimation { to: 0.3; duration: 2000; easing.type: Easing.InOutQuad }
-                                    PropertyAnimation { to: 1.0; duration: 2000; easing.type: Easing.InOutQuad }
-                                }
-                            }
+                            Layout.fillWidth: true
 
                             Label {
                                 text: model.name
                                 font.bold: true
                                 color: root.primaryTextColor
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+
+                            // Compatibility Badge Pill
+                            Rectangle {
+                                implicitWidth: statusRow.implicitWidth + units.gu(2.0)
+                                implicitHeight: statusRow.implicitHeight + units.gu(0.8)
+                                radius: units.gu(1)
+                                color: {
+                                    if (model.compatibility === "green") return root.isDark ? "#162E21" : "#E6F4EA"
+                                    if (model.compatibility === "yellow") return root.isDark ? "#2D2810" : "#FEF7E0"
+                                    return root.isDark ? "#2C1617" : "#FCE8E6"
+                                }
+                                border.color: {
+                                    if (model.compatibility === "green") return root.isDark ? "#214E34" : "#CEEAD6"
+                                    if (model.compatibility === "yellow") return root.isDark ? "#4C4119" : "#FEEFC3"
+                                    return root.isDark ? "#4D1B1E" : "#FAD2CF"
+                                }
+                                border.width: units.dp(1)
+                                Layout.alignment: Qt.AlignVCenter
+
+                                RowLayout {
+                                    id: statusRow
+                                    anchors.centerIn: parent
+                                    spacing: units.gu(0.6)
+
+                                    Rectangle {
+                                        width: units.gu(0.7)
+                                        height: units.gu(0.7)
+                                        radius: width / 2
+                                        color: {
+                                            if (model.compatibility === "green") return root.isDark ? "#2ECC71" : "#137333"
+                                            if (model.compatibility === "yellow") return root.isDark ? "#F1C40F" : "#B06000"
+                                            return root.isDark ? "#E74C3C" : "#C5221F"
+                                        }
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+
+                                    Label {
+                                        id: compatibilityLabel
+                                        text: model.compatibilityText
+                                        font.bold: true
+                                        fontSize: "xx-small"
+                                        color: {
+                                            if (model.compatibility === "green") return root.isDark ? "#2ECC71" : "#137333"
+                                            if (model.compatibility === "yellow") return root.isDark ? "#F1C40F" : "#B06000"
+                                            return root.isDark ? "#E74C3C" : "#C5221F"
+                                        }
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+                                }
                             }
                         }
 
