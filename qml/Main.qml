@@ -61,6 +61,7 @@ MainView {
         property int ctxSize: 2048
         property string flashAttn: "auto"
         property string kvCache: "f16"
+        property string themeMode: "system"
     }
 
     property bool backendReady: false
@@ -76,6 +77,8 @@ MainView {
     property int ctxSize: appSettings.ctxSize
     property string flashAttn: appSettings.flashAttn
     property string kvCache: appSettings.kvCache
+    property string themeMode: appSettings.themeMode || "system"
+    property string systemThemeName: ""
     property bool sidebarOpen: false
     property var modelCatalog: []
     property var currentSessionId: null
@@ -88,6 +91,10 @@ MainView {
     onCtxSizeChanged: appSettings.ctxSize = ctxSize
     onFlashAttnChanged: appSettings.flashAttn = flashAttn
     onKvCacheChanged: appSettings.kvCache = kvCache
+    onThemeModeChanged: {
+        appSettings.themeMode = themeMode
+        updateTheme()
+    }
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -196,6 +203,19 @@ MainView {
         })
     }
 
+    function updateTheme() {
+        if (systemThemeName === "") {
+            systemThemeName = theme.name
+        }
+        if (themeMode === "dark") {
+            theme.name = "Lomiri.Components.Themes.SuruDark"
+        } else if (themeMode === "light") {
+            theme.name = "Lomiri.Components.Themes.Ambiance"
+        } else {
+            theme.name = systemThemeName
+        }
+    }
+
     Python {
         id: python
 
@@ -211,6 +231,8 @@ MainView {
         }
 
         Component.onCompleted: {
+            root.systemThemeName = theme.name
+            updateTheme()
             addImportPath(Qt.resolvedUrl("../backend"))
             importModule("backend", function() {
                 python.call("backend.initialize", [], function(result) {
@@ -365,6 +387,7 @@ MainView {
                 ctxSize: root.ctxSize
                 flashAttn: root.flashAttn
                 kvCache: root.kvCache
+                themeMode: root.themeMode
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
@@ -372,6 +395,7 @@ MainView {
                 onCtxSizeChanged: root.ctxSize = ctxSize
                 onFlashAttnChanged: root.flashAttn = flashAttn
                 onKvCacheChanged: root.kvCache = kvCache
+                onThemeModeChanged: root.themeMode = themeMode
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }

@@ -16,6 +16,7 @@ Page {
     signal toggleSidebar()
 
     property string currentSection: ""
+    property string themeMode: "system"
 
     header: PageHeader {
         id: settingsHeader
@@ -23,7 +24,8 @@ Page {
                settingsPage.currentSection === "model" ? i18n.tr("Active Model") :
                settingsPage.currentSection === "engine" ? i18n.tr("Inference Engine") :
                settingsPage.currentSection === "generation" ? i18n.tr("Generation Settings") :
-               settingsPage.currentSection === "performance" ? i18n.tr("Performance Settings") : i18n.tr("Storage & History")
+               settingsPage.currentSection === "performance" ? i18n.tr("Performance Settings") :
+               settingsPage.currentSection === "theme" ? i18n.tr("Theme") : i18n.tr("Storage & History")
         StyleHints {
             backgroundColor: root.themeColor
             foregroundColor: "white"
@@ -274,6 +276,7 @@ Page {
                     ListElement { title: "Inference Engine"; icon: "info"; section: "engine" }
                     ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
                     ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
+                    ListElement { title: "Theme"; icon: "preferences-desktop-display-symbolic"; section: "theme" }
                     ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
                 }
 
@@ -326,7 +329,7 @@ Page {
                         anchors.bottom: parent.bottom
                         height: 1
                         color: root.isDark ? "#2D2D2D" : "#E2E8F0"
-                        visible: index < 4
+                        visible: index < 5
                     }
 
                     MouseArea {
@@ -764,6 +767,50 @@ Page {
                         fontSize: "x-small"
                         wrapMode: Text.Wrap
                         width: parent.width
+                    }
+                }
+            }
+
+            // Card: Theme Settings
+            Rectangle {
+                width: parent.width
+                height: themeSettingsColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "theme"
+                color: root.cardColor
+                border.color: root.cardBorderColor
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: themeSettingsColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Theme Mode")
+                        font.bold: true
+                        color: root.primaryTextColor
+                    }
+
+                    StyledComboBox {
+                        id: themeSelector
+                        width: parent.width
+                        model: [i18n.tr("System"), i18n.tr("Light"), i18n.tr("Dark")]
+                        currentIndex: {
+                            if (settingsPage.themeMode === "light") return 1;
+                            if (settingsPage.themeMode === "dark") return 2;
+                            return 0; // "system"
+                        }
+                        onActivated: {
+                            if (currentIndex === 1) {
+                                settingsPage.themeMode = "light"
+                            } else if (currentIndex === 2) {
+                                settingsPage.themeMode = "dark"
+                            } else {
+                                settingsPage.themeMode = "system"
+                            }
+                        }
                     }
                 }
             }
