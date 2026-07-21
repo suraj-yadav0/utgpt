@@ -25,7 +25,9 @@ Page {
                settingsPage.currentSection === "engine" ? i18n.tr("Inference Engine") :
                settingsPage.currentSection === "generation" ? i18n.tr("Generation Settings") :
                settingsPage.currentSection === "performance" ? i18n.tr("Performance Settings") :
-               settingsPage.currentSection === "theme" ? i18n.tr("Theme") : i18n.tr("Storage & History")
+               settingsPage.currentSection === "theme" ? i18n.tr("Theme") :
+               settingsPage.currentSection === "websearch" ? i18n.tr("Web Search") : i18n.tr("Storage & History")
+
         StyleHints {
             backgroundColor: root.themeColor
             foregroundColor: "white"
@@ -72,6 +74,7 @@ Page {
     property int ctxSize: 2048
     property string flashAttn: "auto"
     property string kvCache: "f16"
+    property bool webSearchEnabled: false
     property string freeStorage: i18n.tr("Checking storage...")
     property var availableModels: root.availableModels
 
@@ -277,6 +280,7 @@ Page {
                     ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
                     ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
                     ListElement { title: "Theme"; icon: "preferences-desktop-display-symbolic"; section: "theme" }
+                    ListElement { title: "Web Search"; icon: "stock_internet"; section: "websearch" }
                     ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
                 }
 
@@ -329,7 +333,7 @@ Page {
                         anchors.bottom: parent.bottom
                         height: 1
                         color: root.isDark ? "#2D2D2D" : "#E2E8F0"
-                        visible: index < 5
+                        visible: index < 6
                     }
 
                     MouseArea {
@@ -811,6 +815,57 @@ Page {
                                 settingsPage.themeMode = "system"
                             }
                         }
+                    }
+                }
+            }
+
+            // Card: Web Search Settings
+            Rectangle {
+                width: parent.width
+                height: webSearchColumn.implicitHeight + units.gu(3)
+                visible: settingsPage.currentSection === "websearch"
+                color: root.cardColor
+                border.color: root.cardBorderColor
+                border.width: 1
+                radius: units.gu(1.5)
+
+                Column {
+                    id: webSearchColumn
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.5)
+                    spacing: units.gu(1.5)
+
+                    Label {
+                        text: i18n.tr("Web Search Integration")
+                        font.bold: true
+                        color: root.primaryTextColor
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: units.gu(1)
+
+                        Label {
+                            text: i18n.tr("Enable Web Search by default")
+                            color: root.bodyTextColor
+                            fontSize: "small"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        CheckBox {
+                            checked: settingsPage.webSearchEnabled
+                            onCheckedChanged: settingsPage.webSearchEnabled = checked
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+                    }
+
+                    Label {
+                        text: i18n.tr("Allows models to access real-time information via privacy-focused DuckDuckGo Lite search. Search snippets will be automatically injected into your prompt.")
+                        color: root.tertiaryTextColor
+                        fontSize: "x-small"
+                        wrapMode: Text.Wrap
+                        width: parent.width
                     }
                 }
             }

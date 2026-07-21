@@ -47,11 +47,10 @@ Page {
     property int ctxSize: 2048
     property string flashAttn: "auto"
     property string kvCache: "f16"
+    property bool webSearchEnabled: false
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
-
-
 
     function loadHistory(sessionId) {
         if (root.debugMode) {
@@ -215,7 +214,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -268,7 +267,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -437,6 +436,41 @@ Page {
                             if (currentIndex >= 0 && currentIndex < root.availableModels.length) {
                                 root.selectedModel = root.availableModels[currentIndex]
                             }
+                        }
+                    }
+
+                    Rectangle {
+                        id: webSearchBtn
+                        width: units.gu(7.5)
+                        height: units.gu(3.6)
+                        radius: units.gu(1)
+                        color: chatPage.webSearchEnabled ? (root.isDark ? "#1E2D2A" : "#E6FFFA") : (root.isDark ? "#2D2D2D" : "#EDF2F7")
+                        border.color: chatPage.webSearchEnabled ? "#319795" : root.cardBorderColor
+                        border.width: 1
+                        Layout.alignment: Qt.AlignVCenter
+
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: units.gu(0.5)
+
+                            Icon {
+                                name: "stock_internet"
+                                width: units.gu(1.8)
+                                height: units.gu(1.8)
+                                color: chatPage.webSearchEnabled ? "#319795" : root.secondaryTextColor
+                            }
+
+                            Label {
+                                text: i18n.tr("Web")
+                                fontSize: "x-small"
+                                font.bold: true
+                                color: chatPage.webSearchEnabled ? "#319795" : root.secondaryTextColor
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: chatPage.webSearchEnabled = !chatPage.webSearchEnabled
                         }
                     }
                 }

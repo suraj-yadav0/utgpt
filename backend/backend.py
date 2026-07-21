@@ -16,6 +16,7 @@ import io
 import time
 import sys
 import sqlite3
+from html.parser import HTMLParser
 
 DEBUG_MODE = os.environ.get("UTGPT_DEBUG", "").lower() in ("1", "true", "yes")
 
@@ -36,6 +37,63 @@ def _urlopen(req, timeout=60):
         return urllib.request.urlopen(req, timeout=timeout, context=context)
     except Exception:
         return urllib.request.urlopen(req, timeout=timeout)
+
+
+class DDGLiteParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self.current_result = {}
+        self.in_snippet = False
+        self.in_link = False
+        self.accumulated_text = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "a" and attrs_dict.get("class") == "result-link":
+            self.in_link = True
+            self.current_result = {"url": attrs_dict.get("href")}
+            self.accumulated_text = []
+        elif tag == "td" and attrs_dict.get("class") == "result-snippet":
+            self.in_snippet = True
+            self.accumulated_text = []
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.in_link:
+            self.in_link = False
+            self.current_result["title"] = "".join(self.accumulated_text).strip()
+        elif tag == "td" and self.in_snippet:
+            self.in_snippet = False
+            self.current_result["snippet"] = "".join(self.accumulated_text).strip()
+            if "title" in self.current_result and self.current_result["title"]:
+                self.results.append(self.current_result)
+                self.current_result = {}
+
+    def handle_data(self, data):
+        if self.in_link or self.in_snippet:
+            self.accumulated_text.append(data)
+
+
+def search_web(query, num_results=3):
+    """
+    Performs a privacy-focused DuckDuckGo Lite search using standard Python libraries,
+    returning structured web titles, snippets, and URLs.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    url = "https://lite.duckduckgo.com/lite/"
+    data = urllib.parse.urlencode({"q": query}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with _urlopen(req, timeout=10) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+            parser = DDGLiteParser()
+            parser.feed(html)
+            return parser.results[:num_results]
+    except Exception as e:
+        log_error("Web search failed for query '{0}': {1}".format(query, e))
+        return []
 
 
 ACTIVE_DOWNLOADS = {}
@@ -1129,11 +1187,15 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
 
     context_str = ""
     if allowed_context_msgs:
-        context_str = "Relevant facts and details from previous conversations:\n"
         for msg in allowed_context_msgs:
-            # Strip any trailing newlines from stored messages to keep formatting clean
             text_cleaned = msg.get("text", "").strip()
-            if text_cleaned:
+            if not text_cleaned:
+                continue
+            if text_cleaned.startswith("Web Search Results"):
+                context_str += f"{text_cleaned}\n\n"
+            else:
+                if "Relevant facts and details" not in context_str:
+                    context_str += "Relevant facts and details from previous conversations:\n"
                 context_str += f"- {text_cleaned}\n"
 
     # Format using resolved template_type
@@ -1228,6 +1290,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     ctx_size = 2048
     flash_attn = "auto"
     kv_cache = "f16"
+    web_search_enabled = False
     token_callback = None
     done_callback = None
 
@@ -1237,19 +1300,25 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         threads, ctx_size, flash_attn, token_callback, done_callback = args
     elif len(args) == 6:
         threads, ctx_size, flash_attn, kv_cache, token_callback, done_callback = args
+    elif len(args) >= 7:
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = args[:7]
     elif len(args) > 0:
         if not isinstance(args[0], (str, callable)):
             try:
                 threads = int(args[0])
                 if len(args) > 1: ctx_size = int(args[1])
                 if len(args) > 2: flash_attn = str(args[2])
-                
-                # Check if the 4th argument (args[3]) is a callback or kv_cache setting
                 if len(args) > 3:
                     if args[3] in ["f16", "q8_0", "q4_0"]:
                         kv_cache = str(args[3])
-                        if len(args) > 4: token_callback = args[4]
-                        if len(args) > 5: done_callback = args[5]
+                        if len(args) > 4:
+                            if isinstance(args[4], bool) or str(args[4]).lower() in ("true", "false", "1", "0"):
+                                web_search_enabled = str(args[4]).lower() in ("true", "1")
+                                if len(args) > 5: token_callback = args[5]
+                                if len(args) > 6: done_callback = args[6]
+                            else:
+                                token_callback = args[4]
+                                if len(args) > 5: done_callback = args[5]
                     else:
                         token_callback = args[3]
                         if len(args) > 4: done_callback = args[4]
@@ -1259,20 +1328,16 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             token_callback = args[0]
             if len(args) > 1: done_callback = args[1]
 
-    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}".format(model_filename, threads, ctx_size, flash_attn))
+    web_search_enabled = bool(web_search_enabled)
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_enabled))
+    
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
         recent_history = user_message[-5:-1] if len(user_message) > 1 else []
-        exclude_texts = {current_query}
-        for msg in recent_history:
-            exclude_texts.add(msg.get("content", ""))
-        context_msgs = retrieve_relevant_context(current_query, exclude_texts, limit=3)
-        prompt, boundary = get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs)
     else:
         current_query = str(user_message)
-        context_msgs = retrieve_relevant_context(current_query, {current_query}, limit=3)
-        prompt, boundary = get_prompt_and_boundary(model_filename, current_query, [], context_msgs)
-    log_debug("Constructed prompt: {0}".format(repr(prompt)))
+        recent_history = []
+
     model_path = os.path.join(_ensure_models_dir(), model_filename)
 
     if not model_filename:
@@ -1301,6 +1366,30 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     def worker():
         process = None
         try:
+            web_context_msgs = []
+            if web_search_enabled:
+                log_info("Performing web search for query: {0}".format(current_query))
+                _emit_token(token_callback, "*Searching the web for latest info...*\n\n")
+                search_results = search_web(current_query, num_results=3)
+                if search_results:
+                    formatted_web = "Web Search Results (Current Real-time Info):\n"
+                    for idx, res in enumerate(search_results, 1):
+                        title = res.get('title', '')
+                        snippet = res.get('snippet', '')
+                        url = res.get('url', '')
+                        formatted_web += f"{idx}. Title: {title}\n   Snippet: {snippet}\n   Source: {url}\n"
+                    web_context_msgs = [{"role": "system", "text": formatted_web}]
+                else:
+                    _emit_token(token_callback, "*Web search returned no results, relying on model knowledge...*\n\n")
+
+            exclude_texts = {current_query}
+            for msg in recent_history:
+                exclude_texts.add(msg.get("content", ""))
+
+            context_msgs = web_context_msgs + retrieve_relevant_context(current_query, exclude_texts, limit=3)
+            prompt, boundary = get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs)
+            log_debug("Constructed prompt: {0}".format(repr(prompt)))
+
             is_completion = "llama-completion" in cli_path
             log_info("Launching inference engine: {0}".format(cli_path))
 

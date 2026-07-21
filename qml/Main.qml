@@ -62,6 +62,7 @@ MainView {
         property string flashAttn: "auto"
         property string kvCache: "f16"
         property string themeMode: "system"
+        property bool webSearchEnabled: false
     }
 
     property bool backendReady: false
@@ -78,6 +79,7 @@ MainView {
     property string flashAttn: appSettings.flashAttn
     property string kvCache: appSettings.kvCache
     property string themeMode: appSettings.themeMode || "system"
+    property bool webSearchEnabled: appSettings.webSearchEnabled
     property string systemThemeName: ""
     property bool sidebarOpen: false
     property var modelCatalog: []
@@ -91,6 +93,7 @@ MainView {
     onCtxSizeChanged: appSettings.ctxSize = ctxSize
     onFlashAttnChanged: appSettings.flashAttn = flashAttn
     onKvCacheChanged: appSettings.kvCache = kvCache
+    onWebSearchEnabledChanged: appSettings.webSearchEnabled = webSearchEnabled
     onThemeModeChanged: {
         appSettings.themeMode = themeMode
         updateTheme()
@@ -362,6 +365,8 @@ MainView {
                 ctxSize: root.ctxSize
                 flashAttn: root.flashAttn
                 kvCache: root.kvCache
+                webSearchEnabled: root.webSearchEnabled
+                onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
@@ -388,6 +393,7 @@ MainView {
                 flashAttn: root.flashAttn
                 kvCache: root.kvCache
                 themeMode: root.themeMode
+                webSearchEnabled: root.webSearchEnabled
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
@@ -396,6 +402,7 @@ MainView {
                 onFlashAttnChanged: root.flashAttn = flashAttn
                 onKvCacheChanged: root.kvCache = kvCache
                 onThemeModeChanged: root.themeMode = themeMode
+                onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
