@@ -1,0 +1,28 @@
+{
+    "version": "0.0.2",
+    "date": "2026-07-26",
+    "title": "What's New in UTGPT",
+    "subtitle": "Version 0.0.2 Release Notes",
+    "features": [
+        {
+            "title": "On-Device AI Chat",
+            "icon": "message",
+            "description": "Run open-source LLMs locally on your Ubuntu Touch device with total privacy and zero data tracking."
+        },
+        {
+            "title": "Web Search Integration",
+            "icon": "stock_internet",
+            "description": "Enable live web search grounding directly from Settings to get real-time answers with source links."
+        },
+        {
+            "title": "Multi-Session Conversations",
+            "icon": "mail-reply-all-symbolic",
+            "description": "Organize your discussions into multiple chat sessions easily accessible from the sidebar drawer."
+        },
+        {
+            "title": "Customizable Settings & Theme",
+            "icon": "settings",
+            "description": "Tailor generation temperature, thread counts, context size, and seamlessly switch between Light, Dark, or System themes."
+        }
+    ]
+}

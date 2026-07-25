@@ -14,9 +14,11 @@ import "../components"
 Page {
     id: settingsPage
     signal toggleSidebar()
+    signal showReleaseNotes()
 
     property string currentSection: ""
     property string themeMode: "system"
+
 
     header: PageHeader {
         id: settingsHeader
@@ -282,7 +284,9 @@ Page {
                     ListElement { title: "Theme"; icon: "preferences-desktop-display-symbolic"; section: "theme" }
                     ListElement { title: "Web Search"; icon: "stock_internet"; section: "websearch" }
                     ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
+                    ListElement { title: "What's New & Release Notes"; icon: "info"; section: "releasenotes" }
                 }
+
 
                 delegate: Item {
                     width: listMenuContainer.width
@@ -341,7 +345,11 @@ Page {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: {
-                            settingsPage.currentSection = model.section
+                            if (model.section === "releasenotes") {
+                                settingsPage.showReleaseNotes()
+                            } else {
+                                settingsPage.currentSection = model.section
+                            }
                         }
                     }
                 }

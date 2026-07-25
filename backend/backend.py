@@ -1726,6 +1726,25 @@ def import_local_model(file_url):
     return request_id
 
 
+def get_release_notes():
+    import json
+    rel_notes_path = os.path.join(APP_DIR, "assets", "release_notes.json")
+    if os.path.isfile(rel_notes_path):
+        try:
+            with open(rel_notes_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            log_error("Failed to load release notes: {0}".format(e))
+
+    return {
+        "version": "0.0.2",
+        "date": "2026-07-26",
+        "title": "What's New in UTGPT",
+        "subtitle": "Version 0.0.2 Release Notes",
+        "features": []
+    }
+
+
 def initialize():
     _ensure_models_dir()
     init_db()
@@ -1742,12 +1761,18 @@ def initialize():
     if os.environ.get("APP_ID") or os.environ.get("LOMIRI_APP_LAUNCH_ENV"):
         is_desktop = False
 
+    rel_notes = get_release_notes()
+    app_version = rel_notes.get("version", "0.0.2")
+
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
         "llamaCliReady": LLAMA_CLI_READY,
         "debug": DEBUG_MODE,
-        "isDesktop": is_desktop
+        "isDesktop": is_desktop,
+        "version": app_version,
+        "releaseNotes": rel_notes
     }
+
 

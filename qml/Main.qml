@@ -63,6 +63,7 @@ MainView {
         property string kvCache: "f16"
         property string themeMode: "system"
         property bool webSearchEnabled: false
+        property string lastSeenVersion: ""
     }
 
     property bool backendReady: false
@@ -85,6 +86,9 @@ MainView {
     property var modelCatalog: []
     property var currentSessionId: null
     property var chatSessions: []
+    property string currentVersion: ""
+    property var releaseNotesData: null
+
 
     onSelectedModelChanged: appSettings.selectedModel = selectedModel
     onTemperatureChanged: appSettings.temperature = temperature
@@ -185,6 +189,12 @@ MainView {
         }
     }
 
+    function showReleaseNotes() {
+        if (root.releaseNotesData) {
+            PopupUtils.open(releaseNotesDialogComponent, root, { "releaseNotesData": root.releaseNotesData })
+        }
+    }
+
     function showError(message) {
         backendError = message
         PopupUtils.open(errorDialogComponent, root, { "message": message })
@@ -242,8 +252,14 @@ MainView {
                     if (result) {
                         root.debugMode = !!result.debug
                         root.isDesktop = !!result.isDesktop
+                        root.currentVersion = result.version || ""
+                        root.releaseNotesData = result.releaseNotes || null
                         if (!result.llamaCliReady) {
                             PopupUtils.open(downloadPromptDialogComponent, root)
+                        }
+                        if (root.releaseNotesData && root.releaseNotesData.version && appSettings.lastSeenVersion !== root.releaseNotesData.version) {
+                            showReleaseNotes()
+                            appSettings.lastSeenVersion = root.releaseNotesData.version
                         }
                     }
                     root.backendReady = true
@@ -251,6 +267,7 @@ MainView {
             })
         }
     }
+
 
     function tabButtonColor(index) {
         return currentTabIndex === index ? (root.isDark ? "#FF8093" : root.themeColor) : (root.isDark ? "#666666" : "#d7d7d7")
@@ -334,6 +351,15 @@ MainView {
         }
     }
 
+    Component {
+        id: releaseNotesDialogComponent
+
+        ReleaseNotesDialog {
+            id: dialog
+        }
+    }
+
+
     ColumnLayout {
         id: mainLayout
         anchors.top: parent.top
@@ -405,6 +431,7 @@ MainView {
                 onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
+                onShowReleaseNotes: root.showReleaseNotes()
             }
         }
     }
