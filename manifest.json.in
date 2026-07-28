@@ -9,7 +9,7 @@
             "desktop": "utgpt.desktop"
         }
     },
-    "version": "0.0.2",
+    "version": "0.1.0",
     "maintainer": "Suraj Yadav <surajyadav200701@gmail.com>",
     "framework": "$ENV{CLICK_FRAMEWORK}"
 }
