@@ -52,10 +52,67 @@ Page {
     property string pendingRequestId: ""
     property bool userStopped: false
 
+    ListModel {
+        id: attachedDocsModel
+    }
+
+    onBackendReadyChanged: {
+        if (backendReady) {
+            docPickerLoader.source = root.isDesktop ? "../components/DesktopFilePicker.qml" : "../components/LomiriFilePicker.qml"
+        }
+    }
+
+    function loadSessionDocuments(sessionId) {
+        attachedDocsModel.clear()
+        if (!backendReady) return;
+        python.call("backend.get_session_documents", [sessionId || ""], function(result) {
+            attachedDocsModel.clear()
+            if (result && result.length > 0) {
+                for (var i = 0; i < result.length; i++) {
+                    attachedDocsModel.append({
+                        "id": result[i].id,
+                        "filename": result[i].filename,
+                        "filePath": result[i].file_path,
+                        "fileSize": result[i].file_size,
+                        "charCount": result[i].char_count,
+                        "chunkCount": result[i].chunk_count || 1
+                    })
+                }
+            }
+        })
+    }
+
+    function attachDocument(fileUrl) {
+        if (!fileUrl) return;
+        python.call("backend.attach_document", [fileUrl, root.currentSessionId || ""], function(result) {
+            if (result) {
+                if (result.session_id && root.currentSessionId !== result.session_id) {
+                    root.currentSessionId = result.session_id
+                    root.refreshSessions()
+                }
+                loadSessionDocuments(root.currentSessionId)
+                root.showNotification(
+                    i18n.tr("Document Attached"),
+                    i18n.tr("Successfully attached and indexed '%1' (%2 chunks)").arg(result.filename).arg(result.chunk_count)
+                )
+            }
+        })
+    }
+
+    function removeDocument(documentId, modelIndex) {
+        if (!documentId) return;
+        python.call("backend.delete_session_document", [documentId], function(ok) {
+            if (ok && modelIndex >= 0 && modelIndex < attachedDocsModel.count) {
+                attachedDocsModel.remove(modelIndex)
+            }
+        })
+    }
+
     function loadHistory(sessionId) {
         if (root.debugMode) {
             console.log("QML_LOG: loadHistory called with sessionId:", sessionId, "stack:", new Error().stack)
         }
+        loadSessionDocuments(sessionId)
         if (sessionId === null || sessionId === undefined) {
             messageModel.clear()
             return
@@ -97,6 +154,7 @@ Page {
 
     function startNewChat() {
         messageModel.clear()
+        attachedDocsModel.clear()
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
@@ -104,6 +162,7 @@ Page {
 
     function clearHistory() {
         messageModel.clear()
+        attachedDocsModel.clear()
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
@@ -678,6 +737,112 @@ Page {
 
 
 
+        Loader {
+            id: docPickerLoader
+            onLoaded: {
+                if (item) {
+                    if (item.hasOwnProperty("title")) {
+                        item.title = i18n.tr("Select Document File")
+                    }
+                    if (item.hasOwnProperty("nameFilters")) {
+                        item.nameFilters = [
+                            "Document files (*.txt *.md *.pdf *.json *.csv *.py *.js *.c *.cpp *.qml *.html *.xml *.yaml *.yml)",
+                            "All files (*)"
+                        ]
+                    }
+                    item.fileSelected.connect(function(fileUrl) {
+                        chatPage.attachDocument(fileUrl)
+                        if (item.hasOwnProperty("finalizeTransfer")) {
+                            item.finalizeTransfer()
+                        }
+                    })
+                }
+            }
+        }
+
+        // Attached documents chip container
+        Rectangle {
+            id: attachedDocsBar
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(4.5)
+            visible: attachedDocsModel.count > 0
+            color: "transparent"
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: units.gu(1)
+
+                ListView {
+                    id: attachedDocsView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    orientation: ListView.Horizontal
+                    spacing: units.gu(1)
+                    clip: true
+                    model: attachedDocsModel
+
+                    delegate: Rectangle {
+                        width: docChipRow.implicitWidth + units.gu(2)
+                        height: units.gu(4)
+                        radius: units.gu(1)
+                        color: root.isDark ? "#262626" : "#E2E8F0"
+                        border.color: root.themeColor
+                        border.width: 1
+
+                        RowLayout {
+                            id: docChipRow
+                            anchors.centerIn: parent
+                            spacing: units.gu(0.6)
+
+                            Icon {
+                                name: "document"
+                                width: units.gu(1.8)
+                                height: units.gu(1.8)
+                                color: root.themeTextColor
+                            }
+
+                            Label {
+                                text: model.filename
+                                fontSize: "x-small"
+                                font.bold: true
+                                color: root.primaryTextColor
+                                elide: Text.ElideRight
+                                maximumLineCount: 1
+                            }
+
+                            Label {
+                                text: "(" + model.chunkCount + " chunks)"
+                                fontSize: "x-small"
+                                color: root.secondaryTextColor
+                            }
+
+                            Rectangle {
+                                width: units.gu(2.4)
+                                height: units.gu(2.4)
+                                radius: width / 2
+                                color: "transparent"
+
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: "close"
+                                    width: units.gu(1.4)
+                                    height: units.gu(1.4)
+                                    color: "#C7162B"
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        chatPage.removeDocument(model.id, index)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Input card row
         Rectangle {
             id: inputCard
@@ -694,12 +859,35 @@ Page {
                 anchors.rightMargin: units.gu(1.5)
                 spacing: units.gu(1)
 
+                Button {
+                    id: attachButton
+                    Layout.preferredWidth: units.gu(4.5)
+                    Layout.preferredHeight: units.gu(4.5)
+                    Layout.alignment: Qt.AlignVCenter
+                    color: root.isDark ? "#2D2D2D" : "#E2E8F0"
+                    enabled: !chatPage.isResponding
+
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "attachment"
+                        width: units.gu(2.2)
+                        height: units.gu(2.2)
+                        color: attachButton.enabled ? root.primaryTextColor : root.secondaryTextColor
+                    }
+
+                    onClicked: {
+                        if (docPickerLoader.item) {
+                            docPickerLoader.item.open()
+                        }
+                    }
+                }
+
                 TextField {
                     id: composer
                     Layout.fillWidth: true
                     Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    placeholderText: i18n.tr("Type a message...")
+                    placeholderText: attachedDocsModel.count > 0 ? i18n.tr("Ask about attached documents...") : i18n.tr("Type a message...")
                     enabled: !chatPage.isResponding
                     onAccepted: chatPage.sendMessage()
                 }

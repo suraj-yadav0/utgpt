@@ -925,6 +925,27 @@ def init_db():
             timestamp REAL NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER,
+            filename TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size INTEGER,
+            char_count INTEGER,
+            created_at REAL NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            session_id INTEGER,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+        )
+    """)
     
     # Check if 'session_id' column exists in messages table
     cursor.execute("PRAGMA table_info(messages)")
@@ -1109,6 +1130,284 @@ def retrieve_relevant_context(query, exclude_texts, limit=3):
     relevant_msgs = sorted(relevant_msgs, key=lambda x: x["timestamp"])
     
     return [{"role": m["role"], "text": m["text"]} for m in relevant_msgs]
+
+def _extract_pdf_text(file_path):
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(file_path)
+        text_parts = []
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                text_parts.append(t)
+        if text_parts:
+            return "\n".join(text_parts)
+    except Exception:
+        pass
+
+    try:
+        import fitz
+        doc = fitz.open(file_path)
+        text_parts = [page.get_text() for page in doc]
+        if text_parts:
+            return "\n".join(text_parts)
+    except Exception:
+        pass
+
+    import zlib
+    import re
+    text_parts = []
+    try:
+        with open(file_path, "rb") as f:
+            content = f.read()
+
+        stream_matches = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", content, re.DOTALL)
+        for raw_stream in stream_matches:
+            decompressed = None
+            try:
+                decompressed = zlib.decompress(raw_stream)
+            except Exception:
+                decompressed = raw_stream
+
+            if b"BT" in decompressed and b"ET" in decompressed:
+                text_matches = re.findall(rb"\((.*?)\)\s*Tj", decompressed)
+                if text_matches:
+                    for tm in text_matches:
+                        text_parts.append(tm.decode("utf-8", errors="ignore"))
+
+                tj_matches = re.findall(rb"\[(.*?)\]\s*TJ", decompressed, re.DOTALL)
+                for tjm in tj_matches:
+                    sub_strings = re.findall(rb"\((.*?)\)", tjm)
+                    for ss in sub_strings:
+                        text_parts.append(ss.decode("utf-8", errors="ignore"))
+    except Exception as e:
+        log_error(f"Fallback PDF parsing error: {e}")
+
+    result = " ".join(text_parts).strip()
+    return result if result else "[PDF Document attached]"
+
+def extract_text_from_file(file_path):
+    if not file_path:
+        return ""
+    if file_path.startswith("file://"):
+        file_path = urllib.parse.unquote(file_path[7:])
+    if not os.path.exists(file_path):
+        log_error(f"Document file not found: {file_path}")
+        return ""
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        return _extract_pdf_text(file_path)
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except Exception as e:
+        log_error(f"Error reading file {file_path}: {e}")
+        try:
+            with open(file_path, "r", encoding="latin-1", errors="replace") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+def chunk_text(text, chunk_size=600, overlap=100):
+    if not text:
+        return []
+    chunks = []
+    start = 0
+    text_len = len(text)
+    while start < text_len:
+        end = start + chunk_size
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start += chunk_size - overlap
+        if start >= text_len or chunk_size <= overlap:
+            break
+    return chunks
+
+def attach_document(file_path, session_id=None):
+    if not file_path:
+        return None
+    if file_path.startswith("file://"):
+        file_path = urllib.parse.unquote(file_path[7:])
+    if not os.path.exists(file_path):
+        log_error(f"attach_document: file does not exist: {file_path}")
+        return None
+
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
+        cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            session_id = row[0]
+        else:
+            cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("New Chat", time.time()))
+            session_id = cursor.lastrowid
+            conn.commit()
+
+    filename = os.path.basename(file_path)
+    file_size = os.path.getsize(file_path)
+    extracted_text = extract_text_from_file(file_path)
+    char_count = len(extracted_text)
+
+    cursor.execute("""
+        INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (session_id, filename, file_path, file_size, char_count, time.time()))
+    doc_id = cursor.lastrowid
+
+    chunks = chunk_text(extracted_text)
+    for idx, c in enumerate(chunks):
+        cursor.execute("""
+            INSERT INTO document_chunks (document_id, session_id, chunk_index, content)
+            VALUES (?, ?, ?, ?)
+        """, (doc_id, session_id, idx, c))
+
+    conn.commit()
+    conn.close()
+
+    log_info(f"Attached document '{filename}' (ID: {doc_id}) to session {session_id} with {len(chunks)} chunks.")
+    return {
+        "id": doc_id,
+        "session_id": session_id,
+        "filename": filename,
+        "file_path": file_path,
+        "file_size": file_size,
+        "char_count": char_count,
+        "chunk_count": len(chunks)
+    }
+
+def get_session_documents(session_id=None):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
+        cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            session_id = row[0]
+        else:
+            conn.close()
+            return []
+
+    cursor.execute("""
+        SELECT id, session_id, filename, file_path, file_size, char_count, created_at
+        FROM documents
+        WHERE session_id = ?
+        ORDER BY id ASC
+    """, (session_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for r in rows:
+        result.append({
+            "id": r[0],
+            "session_id": r[1],
+            "filename": r[2],
+            "file_path": r[3],
+            "file_size": r[4],
+            "char_count": r[5],
+            "created_at": r[6]
+        })
+    return result
+
+def delete_session_document(document_id):
+    if not document_id:
+        return False
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
+    cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def retrieve_document_context(query, session_id=None, limit=4):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
+        cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            session_id = row[0]
+        else:
+            conn.close()
+            return ""
+
+    cursor.execute("SELECT COUNT(*) FROM documents WHERE session_id = ?", (session_id,))
+    if cursor.fetchone()[0] == 0:
+        conn.close()
+        return ""
+
+    stopwords = {
+        "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "and", "or", 
+        "who", "what", "how", "why", "where", "you", "me", "my", "i", "do", "does", 
+        "did", "have", "has", "had", "for", "with", "this", "that", "it", "he", "she", 
+        "they", "we", "about", "your", "mine", "am", "go", "get", "can", "could", "would",
+        "here", "there", "when", "then", "which", "whoever", "whose", "whom"
+    }
+
+    words = [w.strip("?,.:;!\"'()[]{}<>-_+=|\\/`~@#$%^&*").lower() for w in query.split()]
+    keywords = [w for w in words if w and w not in stopwords and len(w) > 2]
+
+    selected_chunks = []
+    if keywords:
+        matches = {}
+        for kw in keywords:
+            cursor.execute("""
+                SELECT dc.id, d.filename, dc.chunk_index, dc.content
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE dc.session_id = ? AND dc.content LIKE ?
+            """, (session_id, f"%{kw}%"))
+            for row in cursor.fetchall():
+                chunk_id, filename, c_idx, content = row
+                if chunk_id not in matches:
+                    matches[chunk_id] = {
+                        "filename": filename,
+                        "chunk_index": c_idx,
+                        "content": content,
+                        "score": 0
+                    }
+                matches[chunk_id]["score"] += 1
+        if matches:
+            sorted_chunks = sorted(matches.values(), key=lambda x: (x["score"], -x["chunk_index"]), reverse=True)
+            selected_chunks = sorted_chunks[:limit]
+
+    if not selected_chunks:
+        cursor.execute("""
+            SELECT d.filename, dc.chunk_index, dc.content
+            FROM document_chunks dc
+            JOIN documents d ON dc.document_id = d.id
+            WHERE dc.session_id = ?
+            ORDER BY d.id ASC, dc.chunk_index ASC
+            LIMIT ?
+        """, (session_id, limit))
+        for row in cursor.fetchall():
+            selected_chunks.append({
+                "filename": row[0],
+                "chunk_index": row[1],
+                "content": row[2]
+            })
+
+    conn.close()
+
+    if not selected_chunks:
+        return ""
+
+    context_str = "Attached Document Context (Local Files):\n"
+    for item in selected_chunks:
+        context_str += f"[{item['filename']} - chunk {item['chunk_index'] + 1}]:\n{item['content']}\n\n"
+    return context_str.strip()
 
 def get_model_metadata(model_filename):
     # Try local models.json first
@@ -1386,7 +1685,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             for msg in recent_history:
                 exclude_texts.add(msg.get("content", ""))
 
-            context_msgs = web_context_msgs + retrieve_relevant_context(current_query, exclude_texts, limit=3)
+            doc_context = retrieve_document_context(current_query)
+            doc_context_msgs = [{"role": "system", "text": doc_context}] if doc_context else []
+
+            context_msgs = web_context_msgs + doc_context_msgs + retrieve_relevant_context(current_query, exclude_texts, limit=3)
             prompt, boundary = get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs)
             log_debug("Constructed prompt: {0}".format(repr(prompt)))
 

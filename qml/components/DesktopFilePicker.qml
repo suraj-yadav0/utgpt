@@ -11,11 +11,14 @@ Item {
     id: pickerItem
     signal fileSelected(string fileUrl)
 
+    property string title: "Select File"
+    property var nameFilters: [ "All files (*)" ]
+
     FileDialog {
         id: fileDialog
-        title: "Select GGUF Model File"
+        title: pickerItem.title
         folder: shortcuts.home
-        nameFilters: [ "GGUF files (*.gguf)" ]
+        nameFilters: pickerItem.nameFilters
         onAccepted: {
             pickerItem.fileSelected(fileDialog.fileUrl.toString())
         }
