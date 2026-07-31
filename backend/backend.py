@@ -766,7 +766,7 @@ def _download_and_extract_tar(url):
 def ensure_llama_cli():
     cli_path = get_llama_cli_path()
     completion_path = get_llama_completion_path()
-    if is_binary_working(cli_path) and is_binary_working(completion_path):
+    if is_binary_working(cli_path) or is_binary_working(completion_path):
         return True
     
     system = platform.system().lower()
@@ -783,14 +783,19 @@ def ensure_llama_cli():
     if not target_arch:
         target_arch = "arm64" if "arm" in machine or "aarch" in machine else "x64"
         
-    tag = "b9874"
+    urls_to_try = []
+
+    # For arm64 (Ubuntu Touch devices like OnePlus 6T), prioritize our verified base ARMv8-A GLIBC 2.31 compatible build
+    if target_arch == "arm64":
+        urls_to_try.append("https://github.com/suraj-yadav0/utgpt/releases/download/v0.0.2/llama-compat-bin-ubuntu-arm64.tar.gz")
+
+    # Try resolving latest tag from GitHub API if available
     try:
         import json
         req = urllib.request.Request("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5", headers={"User-Agent": "UTGPT/0.1"})
         with _urlopen(req, timeout=10) as response:
             releases = json.loads(response.read().decode())
             expected_asset_suffix = f"-bin-ubuntu-{target_arch}.tar.gz"
-            found_tag = None
             for release in releases:
                 r_tag = release.get("tag_name")
                 if not r_tag:
@@ -798,35 +803,30 @@ def ensure_llama_cli():
                 assets = release.get("assets", [])
                 expected_asset_name = f"llama-{r_tag}{expected_asset_suffix}"
                 if any(asset.get("name") == expected_asset_name for asset in assets):
-                    found_tag = r_tag
+                    api_url = f"https://github.com/ggml-org/llama.cpp/releases/download/{r_tag}/llama-{r_tag}-bin-ubuntu-{target_arch}.tar.gz"
+                    if api_url not in urls_to_try:
+                        urls_to_try.append(api_url)
                     break
-            if found_tag:
-                tag = found_tag
-                log_info("Resolved latest llama.cpp release tag to: {0}".format(tag))
-            else:
-                log_info("No release with valid asset found in latest releases, using fallback tag: {0}".format(tag))
     except Exception as e:
-        log_error("Error fetching latest release from GitHub API: {0}. Using fallback tag: {1}".format(e, tag))
+        log_error("Error fetching latest release from GitHub API: {0}".format(e))
         
-    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-ubuntu-{target_arch}.tar.gz"
-    
-    log_info("Attempting to download official llama-cli binary: {0}".format(url))
-    if _download_and_extract_tar(url):
-        if is_binary_working(cli_path) and is_binary_working(completion_path):
-            return True
-        
-        # If the official binary is not working, fall back to our compatible base ARMv8-A build
-        if target_arch == "arm64":
-            log_info("Official arm64 binary failed verification (likely Illegal Instruction / SIGILL). Attempting fallback download of compatible base ARMv8-A binary...")
-            fallback_url = "https://github.com/suraj-yadav0/utgpt/releases/download/v0.0.2/llama-compat-bin-ubuntu-arm64.tar.gz"
-            if _download_and_extract_tar(fallback_url):
-                if is_binary_working(cli_path) and is_binary_working(completion_path):
-                    log_info("Successfully downloaded and verified compatible base ARMv8-A binary.")
-                    return True
-                else:
-                    log_error("Compatible fallback binary also failed verification.")
-                    
+    if not urls_to_try:
+        fallback_url = f"https://github.com/suraj-yadav0/utgpt/releases/download/v0.0.2/llama-compat-bin-ubuntu-{target_arch}.tar.gz"
+        urls_to_try.append(fallback_url)
+
+    for url in urls_to_try:
+        log_info("Attempting to download llama-cli binary from: {0}".format(url))
+        if _download_and_extract_tar(url):
+            cli_path = get_llama_cli_path()
+            completion_path = get_llama_completion_path()
+            if is_binary_working(cli_path) or is_binary_working(completion_path):
+                log_info("Successfully downloaded and verified working llama-cli binary.")
+                return True
+            else:
+                log_error("Downloaded binary from {0} failed verification.".format(url))
+
     return False
+
 
 def download_llama_cli_in_background():
     global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
@@ -836,7 +836,7 @@ def download_llama_cli_in_background():
         if ensure_llama_cli():
             cli_path = get_llama_cli_path()
             completion_path = get_llama_completion_path()
-            if is_binary_working(cli_path) and is_binary_working(completion_path):
+            if is_binary_working(cli_path) or is_binary_working(completion_path):
                 LLAMA_CLI_READY = True
             else:
                 LLAMA_CLI_READY = False
@@ -1726,6 +1726,25 @@ def import_local_model(file_url):
     return request_id
 
 
+def get_release_notes():
+    import json
+    rel_notes_path = os.path.join(APP_DIR, "assets", "release_notes.json")
+    if os.path.isfile(rel_notes_path):
+        try:
+            with open(rel_notes_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            log_error("Failed to load release notes: {0}".format(e))
+
+    return {
+        "version": "0.1.0",
+        "date": "2026-07-26",
+        "title": "What's New in UTGPT",
+        "subtitle": "Version 0.1.0 Release Notes",
+        "features": []
+    }
+
+
 def initialize():
     _ensure_models_dir()
     init_db()
@@ -1742,12 +1761,18 @@ def initialize():
     if os.environ.get("APP_ID") or os.environ.get("LOMIRI_APP_LAUNCH_ENV"):
         is_desktop = False
 
+    rel_notes = get_release_notes()
+    app_version = rel_notes.get("version", "0.1.0")
+
     return {
         "ready": True,
         "modelsDir": MODELS_DIR,
         "llamaCliPath": get_llama_cli_path(),
         "llamaCliReady": LLAMA_CLI_READY,
         "debug": DEBUG_MODE,
-        "isDesktop": is_desktop
+        "isDesktop": is_desktop,
+        "version": app_version,
+        "releaseNotes": rel_notes
     }
+
 
