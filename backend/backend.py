@@ -1737,10 +1737,10 @@ def get_release_notes():
             log_error("Failed to load release notes: {0}".format(e))
 
     return {
-        "version": "0.0.2",
+        "version": "0.1.0",
         "date": "2026-07-26",
         "title": "What's New in UTGPT",
-        "subtitle": "Version 0.0.2 Release Notes",
+        "subtitle": "Version 0.1.0 Release Notes",
         "features": []
     }
 
@@ -1762,7 +1762,7 @@ def initialize():
         is_desktop = False
 
     rel_notes = get_release_notes()
-    app_version = rel_notes.get("version", "0.0.2")
+    app_version = rel_notes.get("version", "0.1.0")
 
     return {
         "ready": True,
