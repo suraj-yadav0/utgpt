@@ -191,7 +191,7 @@ MainView {
 
     function showReleaseNotes() {
         if (root.releaseNotesData) {
-            PopupUtils.open(releaseNotesDialogComponent, root, { "releaseNotesData": root.releaseNotesData })
+            PopupUtils.open(releaseNotesDialogComponent, root, { "releaseNotesData": root.releaseNotesData, "appRoot": root })
         }
     }
 

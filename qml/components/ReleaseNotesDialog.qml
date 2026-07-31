@@ -13,6 +13,7 @@ import Lomiri.Components.Popups 1.3
 Dialog {
     id: dialog
     property var releaseNotesData: null
+    property var appRoot: (typeof root !== "undefined") ? root : null
 
     title: (releaseNotesData && releaseNotesData.title) ? releaseNotesData.title : i18n.tr("What's New")
 
@@ -27,7 +28,7 @@ Dialog {
             visible: !!(dialog.releaseNotesData && dialog.releaseNotesData.version)
 
             Rectangle {
-                color: root.themeColor
+                color: appRoot ? appRoot.themeColor : "#5C0A1A"
                 radius: units.gu(0.5)
                 implicitWidth: versionLabel.implicitWidth + units.gu(1.5)
                 implicitHeight: versionLabel.implicitHeight + units.gu(0.6)
@@ -44,7 +45,7 @@ Dialog {
 
             Label {
                 text: (dialog.releaseNotesData && dialog.releaseNotesData.subtitle) ? dialog.releaseNotesData.subtitle : i18n.tr("Release Highlights")
-                color: root.secondaryTextColor
+                color: appRoot ? appRoot.secondaryTextColor : "#64748B"
                 fontSize: "small"
                 Layout.fillWidth: true
                 elide: Text.ElideRight
@@ -69,8 +70,8 @@ Dialog {
                     delegate: Rectangle {
                         Layout.fillWidth: true
                         implicitHeight: itemRow.implicitHeight + units.gu(2)
-                        color: root.isDark ? "#222222" : "#F8F9FA"
-                        border.color: root.cardBorderColor
+                        color: (appRoot && appRoot.isDark) ? "#222222" : "#F8F9FA"
+                        border.color: appRoot ? appRoot.cardBorderColor : "#E2E8F0"
                         border.width: 1
                         radius: units.gu(1)
 
@@ -85,14 +86,14 @@ Dialog {
                                 width: units.gu(3.5)
                                 height: units.gu(3.5)
                                 radius: units.gu(1.75)
-                                color: Qt.rgba(root.themeColor.r, root.themeColor.g, root.themeColor.b, 0.15)
+                                color: appRoot ? Qt.rgba(appRoot.themeColor.r, appRoot.themeColor.g, appRoot.themeColor.b, 0.15) : "transparent"
 
                                 Icon {
                                     anchors.centerIn: parent
                                     width: units.gu(2)
                                     height: units.gu(2)
                                     name: modelData.icon || "info"
-                                    color: root.themeTextColor
+                                    color: appRoot ? appRoot.themeTextColor : "#5C0A1A"
                                 }
                             }
 
@@ -103,14 +104,14 @@ Dialog {
                                 Label {
                                     text: modelData.title || ""
                                     font.bold: true
-                                    color: root.primaryTextColor
+                                    color: appRoot ? appRoot.primaryTextColor : "#1E293B"
                                     wrapMode: Text.Wrap
                                     Layout.fillWidth: true
                                 }
 
                                 Label {
                                     text: modelData.description || ""
-                                    color: root.bodyTextColor
+                                    color: appRoot ? appRoot.bodyTextColor : "#475569"
                                     fontSize: "small"
                                     wrapMode: Text.Wrap
                                     Layout.fillWidth: true
@@ -125,7 +126,7 @@ Dialog {
         // Close action button
         Button {
             text: i18n.tr("Got It!")
-            color: root.themeColor
+            color: appRoot ? appRoot.themeColor : "#5C0A1A"
             Layout.fillWidth: true
             onClicked: PopupUtils.close(dialog)
         }
