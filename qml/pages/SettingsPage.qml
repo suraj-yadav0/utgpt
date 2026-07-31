@@ -337,7 +337,7 @@ Page {
                         anchors.bottom: parent.bottom
                         height: 1
                         color: root.isDark ? "#2D2D2D" : "#E2E8F0"
-                        visible: index < 6
+                        visible: index < listMenuContainer.model.count - 1
                     }
 
                     MouseArea {
