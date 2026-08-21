@@ -102,12 +102,22 @@ Page {
                 }
                 loadSessionDocuments(root.currentSessionId)
                 if (result.is_image) {
-                    root.showNotification(
-                        i18n.tr("Image Attached"),
-                        result.char_count > 0 ?
-                            i18n.tr("Extracted %1 characters via OCR from '%2'").arg(result.char_count).arg(result.filename) :
-                            i18n.tr("Attached image '%1' (No text recognized)").arg(result.filename)
-                    )
+                    if (result.ocr_success && result.ocr_chars > 0) {
+                        root.showNotification(
+                            i18n.tr("Image OCR Complete"),
+                            i18n.tr("Recognized %1 characters from '%2'").arg(result.ocr_chars).arg(result.filename)
+                        )
+                    } else if (result.ocr_downloading) {
+                        root.showNotification(
+                            i18n.tr("Setting up OCR Engine"),
+                            i18n.tr("Downloading Tesseract OCR engine in background. Please wait a moment and try again.")
+                        )
+                    } else {
+                        root.showNotification(
+                            i18n.tr("Image Attached"),
+                            i18n.tr("Attached image '%1'").arg(result.filename)
+                        )
+                    }
                 } else {
                     root.showNotification(
                         i18n.tr("Document Attached"),
@@ -812,7 +822,7 @@ Page {
                             spacing: units.gu(0.6)
 
                             Icon {
-                                name: model.isImage ? "camera" : "document"
+                                name: model.isImage ? "camera-app" : "document-open"
                                 width: units.gu(1.8)
                                 height: units.gu(1.8)
                                 color: root.themeTextColor

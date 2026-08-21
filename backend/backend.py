@@ -148,6 +148,27 @@ def get_llama_completion_path():
         return LLAMA_COMPLETION_PATH_BUNDLED
     return LLAMA_COMPLETION_PATH_WRITABLE
 
+TESSERACT_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "tesseract")
+TESSERACT_PATH_WRITABLE = os.path.join(MODELS_DIR, "tesseract")
+TESSDATA_DIR_BUNDLED = os.path.join(APP_DIR, "assets", "tessdata")
+TESSDATA_DIR_WRITABLE = os.path.join(MODELS_DIR, "tessdata")
+
+TESSERACT_DOWNLOADING = False
+TESSERACT_READY = False
+TESSERACT_ERROR = None
+
+def is_tesseract_working(bin_path, tessdata_path=None):
+    if not bin_path or not os.path.exists(bin_path):
+        return False
+    try:
+        env = os.environ.copy()
+        if tessdata_path and os.path.exists(tessdata_path):
+            env["TESSDATA_PREFIX"] = tessdata_path
+        res = subprocess.run([bin_path, "--version"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
+        return res.returncode == 0
+    except Exception:
+        return False
+
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
 ACTIVE_PROCESSES = set()
@@ -1196,9 +1217,9 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", "
 
 def _get_tesseract_path_and_tessdata():
     """Finds available tesseract binary and tessdata directory."""
-    import shutil
     tesseract_candidates = [
-        os.path.join(APP_DIR, "assets", "tesseract"),
+        TESSERACT_PATH_WRITABLE,
+        TESSERACT_PATH_BUNDLED,
         os.path.join(APP_DIR, "assets", "bin", "tesseract"),
         os.path.join(APP_DIR, "bin", "tesseract"),
         shutil.which("tesseract"),
@@ -1212,7 +1233,8 @@ def _get_tesseract_path_and_tessdata():
             break
 
     tessdata_candidates = [
-        os.path.join(APP_DIR, "assets", "tessdata"),
+        TESSDATA_DIR_WRITABLE,
+        TESSDATA_DIR_BUNDLED,
         os.path.join(APP_DIR, "tessdata"),
         "/usr/share/tesseract-ocr/4.00/tessdata",
         "/usr/share/tesseract-ocr/5/tessdata",
@@ -1227,6 +1249,75 @@ def _get_tesseract_path_and_tessdata():
 
     return tesseract_bin, tessdata_dir
 
+def ensure_tesseract_ocr():
+    """Ensures a working static Tesseract OCR binary and English traineddata exist."""
+    global TESSERACT_READY, TESSERACT_ERROR
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+    if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir):
+        TESSERACT_READY = True
+        return True
+
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(TESSDATA_DIR_WRITABLE, exist_ok=True)
+
+    machine = platform.machine().lower()
+    target_arch = "aarch64" if ("arm" in machine or "aarch" in machine) else "x86_64"
+
+    bin_url = f"https://github.com/DanielMYT/tesseract-static/releases/download/tesseract-5.5.3/tesseract.{target_arch}"
+    tessdata_url = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/eng.traineddata"
+
+    if not os.path.exists(TESSERACT_PATH_WRITABLE) or not os.access(TESSERACT_PATH_WRITABLE, os.X_OK):
+        log_info(f"Downloading static Tesseract OCR binary ({target_arch}) from {bin_url}...")
+        try:
+            req = urllib.request.Request(bin_url, headers={"User-Agent": "UTGPT/0.1"})
+            with urllib.request.urlopen(req, timeout=60) as resp, open(TESSERACT_PATH_WRITABLE, "wb") as out:
+                shutil.copyfileobj(resp, out)
+            os.chmod(TESSERACT_PATH_WRITABLE, 0o755)
+        except Exception as e:
+            log_error(f"Failed to download Tesseract binary: {e}")
+            TESSERACT_ERROR = f"Binary download error: {e}"
+            return False
+
+    eng_path = os.path.join(TESSDATA_DIR_WRITABLE, "eng.traineddata")
+    if not os.path.exists(eng_path) or os.path.getsize(eng_path) < 100000:
+        log_info(f"Downloading OCR English traineddata from {tessdata_url}...")
+        try:
+            req = urllib.request.Request(tessdata_url, headers={"User-Agent": "UTGPT/0.1"})
+            with urllib.request.urlopen(req, timeout=60) as resp, open(eng_path, "wb") as out:
+                shutil.copyfileobj(resp, out)
+        except Exception as e:
+            log_error(f"Failed to download eng.traineddata: {e}")
+            TESSERACT_ERROR = f"Tessdata download error: {e}"
+            return False
+
+    if is_tesseract_working(TESSERACT_PATH_WRITABLE, TESSDATA_DIR_WRITABLE):
+        log_info("Successfully downloaded and verified working Tesseract OCR engine.")
+        TESSERACT_READY = True
+        TESSERACT_ERROR = None
+        return True
+    else:
+        TESSERACT_ERROR = "Tesseract binary verification failed."
+        log_error(TESSERACT_ERROR)
+        return False
+
+def download_tesseract_in_background():
+    global TESSERACT_DOWNLOADING, TESSERACT_READY, TESSERACT_ERROR
+    if TESSERACT_DOWNLOADING:
+        return
+    TESSERACT_DOWNLOADING = True
+    TESSERACT_ERROR = None
+    try:
+        ensure_tesseract_ocr()
+    except Exception as e:
+        TESSERACT_ERROR = str(e)
+    finally:
+        TESSERACT_DOWNLOADING = False
+
+def start_ocr_engine_download():
+    thread = threading.Thread(target=download_tesseract_in_background)
+    thread.daemon = True
+    thread.start()
+
 def _extract_image_ocr(file_path, lang="eng"):
     """Extracts text from an image file using Tesseract OCR or pytesseract."""
     if not file_path or not os.path.exists(file_path):
@@ -1236,6 +1327,18 @@ def _extract_image_ocr(file_path, lang="eng"):
     filename = os.path.basename(file_path)
     tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
 
+    if not tesseract_bin or not is_tesseract_working(tesseract_bin, tessdata_dir):
+        if not TESSERACT_DOWNLOADING:
+            start_ocr_engine_download()
+        # If download is running, give it a moment to complete
+        if TESSERACT_DOWNLOADING:
+            for _ in range(12):
+                time.sleep(0.5)
+                tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+                if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir):
+                    break
+
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
     if tesseract_bin:
         try:
             env = os.environ.copy()
@@ -1281,12 +1384,12 @@ def _extract_image_ocr(file_path, lang="eng"):
         log_error(f"pytesseract extraction error on {filename}: {e}")
 
     log_warn(f"No OCR engine available to extract text from '{filename}'.")
-    return f"[Image attached: {filename}. (Note: OCR engine tesseract is not available to extract text).]"
+    return "[Image attached: OCR engine is downloading or not yet ready. Please try attaching the image again in a few moments.]"
 
 def get_ocr_info():
     """Returns OCR availability status and engine details."""
     tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
-    has_bin = bool(tesseract_bin and os.path.isfile(tesseract_bin))
+    has_bin = bool(tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir))
     has_pytesseract = False
     try:
         import pytesseract
@@ -1299,6 +1402,8 @@ def get_ocr_info():
         "available": available,
         "binary_path": tesseract_bin or "",
         "tessdata_path": tessdata_dir or "",
+        "downloading": TESSERACT_DOWNLOADING,
+        "error": TESSERACT_ERROR,
         "engine": "tesseract" if has_bin else ("pytesseract" if has_pytesseract else "none")
     }
 
@@ -1392,6 +1497,8 @@ def attach_document(file_path, session_id=None):
 
     extracted_text = extract_text_from_file(stored_path)
     char_count = len(extracted_text)
+    ocr_success = is_image and bool(extracted_text and not extracted_text.startswith("[Image attached:") and len(extracted_text.strip()) > 0)
+    ocr_chars = len(extracted_text) if ocr_success else 0
 
     cursor.execute("""
         INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
@@ -1422,7 +1529,10 @@ def attach_document(file_path, session_id=None):
         "char_count": char_count,
         "chunk_count": len(chunks),
         "file_type": file_type,
-        "is_image": is_image
+        "is_image": is_image,
+        "ocr_success": ocr_success,
+        "ocr_chars": ocr_chars,
+        "ocr_downloading": TESSERACT_DOWNLOADING
     }
 
 def get_session_documents(session_id=None):
@@ -2203,6 +2313,10 @@ def initialize():
         LLAMA_CLI_READY = True
     else:
         LLAMA_CLI_READY = False
+
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+    if not tesseract_bin or not is_tesseract_working(tesseract_bin, tessdata_dir):
+        start_ocr_engine_download()
         
     is_desktop = True
     if os.environ.get("APP_ID") or os.environ.get("LOMIRI_APP_LAUNCH_ENV"):
