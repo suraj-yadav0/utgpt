@@ -1489,74 +1489,49 @@ def delete_session_document(document_id):
     conn.close()
     return True
 
-def retrieve_document_context(query, session_id=None, limit=4):
+def retrieve_document_context(query, session_id=None, limit=6):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
-        cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+        cursor.execute("SELECT session_id FROM messages WHERE session_id IS NOT NULL ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
-        if row:
+        if row and row[0]:
             session_id = row[0]
         else:
-            conn.close()
-            return ""
+            cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                session_id = row[0]
+            else:
+                conn.close()
+                return ""
 
-    cursor.execute("SELECT COUNT(*) FROM documents WHERE session_id = ?", (session_id,))
-    if cursor.fetchone()[0] == 0:
+    cursor.execute("SELECT id, filename, char_count FROM documents WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    doc_rows = cursor.fetchall()
+    if not doc_rows:
         conn.close()
         return ""
 
-    stopwords = {
-        "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "and", "or", 
-        "who", "what", "how", "why", "where", "you", "me", "my", "i", "do", "does", 
-        "did", "have", "has", "had", "for", "with", "this", "that", "it", "he", "she", 
-        "they", "we", "about", "your", "mine", "am", "go", "get", "can", "could", "would",
-        "here", "there", "when", "then", "which", "whoever", "whose", "whom"
-    }
-
-    words = [w.strip("?,.:;!\"'()[]{}<>-_+=|\\/`~@#$%^&*").lower() for w in query.split()]
-    keywords = [w for w in words if w and w not in stopwords and len(w) > 2]
-
     selected_chunks = []
-    if keywords:
-        matches = {}
-        for kw in keywords:
-            cursor.execute("""
-                SELECT dc.id, d.filename, dc.chunk_index, dc.content
-                FROM document_chunks dc
-                JOIN documents d ON dc.document_id = d.id
-                WHERE dc.session_id = ? AND dc.content LIKE ?
-            """, (session_id, f"%{kw}%"))
-            for row in cursor.fetchall():
-                chunk_id, filename, c_idx, content = row
-                if chunk_id not in matches:
-                    matches[chunk_id] = {
-                        "filename": filename,
-                        "chunk_index": c_idx,
-                        "content": content,
-                        "score": 0
-                    }
-                matches[chunk_id]["score"] += 1
-        if matches:
-            sorted_chunks = sorted(matches.values(), key=lambda x: (x["score"], -x["chunk_index"]), reverse=True)
-            selected_chunks = sorted_chunks[:limit]
-
-    if not selected_chunks:
+    for d_id, fname, c_count in doc_rows:
+        ext = os.path.splitext(fname)[1].lower()
+        is_img = ext in IMAGE_EXTENSIONS
         cursor.execute("""
             SELECT d.filename, dc.chunk_index, dc.content
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
-            WHERE dc.session_id = ?
-            ORDER BY d.id ASC, dc.chunk_index ASC
-            LIMIT ?
-        """, (session_id, limit))
-        for row in cursor.fetchall():
+            WHERE dc.document_id = ?
+            ORDER BY dc.chunk_index ASC
+        """, (d_id,))
+        chunks_for_doc = cursor.fetchall()
+        for row in chunks_for_doc:
             selected_chunks.append({
                 "filename": row[0],
                 "chunk_index": row[1],
-                "content": row[2]
+                "content": row[2],
+                "is_image": is_img
             })
 
     conn.close()
@@ -1564,13 +1539,16 @@ def retrieve_document_context(query, session_id=None, limit=4):
     if not selected_chunks:
         return ""
 
-    context_str = "Attached Context (Local Documents & Image OCR):\n"
-    for item in selected_chunks:
+    context_str = "Attached Context (Local Documents & Transcribed Images):\n"
+    for item in selected_chunks[:limit]:
         fname = item['filename']
         ext = os.path.splitext(fname)[1].lower()
-        is_img = ext in IMAGE_EXTENSIONS
-        prefix = "Attached Image (OCR Extracted Text)" if is_img else "Attached Document"
-        context_str += f"[{prefix}: {fname} - chunk {item['chunk_index'] + 1}]:\n{item['content']}\n\n"
+        is_img = item.get('is_image', ext in IMAGE_EXTENSIONS)
+        if is_img:
+            context_str += f"[Attached Image: '{fname}' (OCR Transcribed Text)]:\n\"\"\"\n{item['content']}\n\"\"\"\n\n"
+        else:
+            context_str += f"[Attached Document: '{fname}' (Part {item['chunk_index'] + 1})]:\n\"\"\"\n{item['content']}\n\"\"\"\n\n"
+
     return context_str.strip()
 
 def get_model_metadata(model_filename):
@@ -1596,7 +1574,7 @@ def get_model_metadata(model_filename):
 def get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs):
     """
     Formats the conversation prompt using model-specific templates,
-    integrating retrieved relevant history context (RAG) in the system prompt.
+    integrating retrieved relevant history context (RAG) and OCR image transcripts in the system prompt.
     Includes context window budgeting to prevent leakage and out-of-token crashes.
     """
     model_lower = model_filename.lower()
@@ -1640,7 +1618,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             allowed_recent_history.insert(0, msg)
             current_tokens += msg_tok
 
-    # 2. Budget RAG context next
+    # 2. Budget RAG & OCR context next
     for msg in context_msgs:
         text = msg.get("text", "")
         msg_tok = len(text) // 4
@@ -1648,26 +1626,43 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             allowed_context_msgs.append(msg)
             current_tokens += msg_tok
 
-    context_str = ""
+    doc_context_str = ""
+    web_context_str = ""
+    history_rag_str = ""
+
     if allowed_context_msgs:
         for msg in allowed_context_msgs:
             text_cleaned = msg.get("text", "").strip()
             if not text_cleaned:
                 continue
             if text_cleaned.startswith("Web Search Results"):
-                context_str += f"{text_cleaned}\n\n"
+                web_context_str += f"{text_cleaned}\n\n"
+            elif text_cleaned.startswith("Attached Context"):
+                doc_context_str += f"{text_cleaned}\n\n"
             else:
-                if "Relevant facts and details" not in context_str:
-                    context_str += "Relevant facts and details from previous conversations:\n"
-                context_str += f"- {text_cleaned}\n"
+                history_rag_str += f"- {text_cleaned}\n"
+
+    system_instruction_parts = ["You are a helpful, knowledgeable AI assistant."]
+
+    if doc_context_str:
+        system_instruction_parts.append(
+            "The user has attached the following image(s) or document(s) with their transcribed textual contents. "
+            "You have direct access to this text below. Always refer to this transcribed text to answer the user's questions, translate, summarize, or extract details as requested:\n\n"
+            + doc_context_str.strip()
+        )
+
+    if web_context_str:
+        system_instruction_parts.append(web_context_str.strip())
+
+    if history_rag_str:
+        system_instruction_parts.append("Relevant facts and details from previous conversations:\n" + history_rag_str.strip())
+
+    system_content = "\n\n".join(system_instruction_parts)
 
     # Format using resolved template_type
     prompt = ""
     boundary = ""
     if template_type == "llama3":
-        system_content = "You are a helpful assistant."
-        if context_str:
-            system_content += f"\n\n{context_str}"
         prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_content}<|eot_id|>"
         for msg in allowed_recent_history:
             role = msg.get("role", "user")
@@ -1678,9 +1673,6 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         boundary = "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
     elif template_type == "chatml":
-        system_content = "You are a helpful assistant."
-        if context_str:
-            system_content += f"\n\n{context_str}"
         prompt = f"<|im_start|>system\n{system_content}<|im_end|>\n"
         for msg in allowed_recent_history:
             role = msg.get("role", "user")
@@ -1691,9 +1683,6 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         boundary = "<|im_start|>assistant\n"
 
     elif template_type == "zephyr":
-        system_content = "You are a helpful assistant."
-        if context_str:
-            system_content += f"\n\n{context_str}"
         prompt = f"<|system|>\n{system_content}</s>\n"
         for msg in allowed_recent_history:
             role = msg.get("role", "user")
@@ -1704,9 +1693,6 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         boundary = "<|assistant|>\n"
 
     elif template_type == "gemma":
-        system_content = "You are a helpful assistant."
-        if context_str:
-            system_content += f"\n{context_str}"
         prompt = "<bos>"
         prompt += f"<start_of_turn>system\n{system_content}<end_of_turn>\n"
         for msg in allowed_recent_history:
@@ -1718,9 +1704,6 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         boundary = "<start_of_turn>assistant\n"
 
     elif template_type == "phi3":
-        system_content = "You are a helpful assistant."
-        if context_str:
-            system_content += f"\n{context_str}"
         prompt = "<s>"
         prompt += f"<|system|>\n{system_content}<|end|>\n"
         for msg in allowed_recent_history:
@@ -1732,9 +1715,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         boundary = "<|assistant|>\n"
 
     else:
-        prompt = ""
-        if context_str:
-            prompt += f"System: {context_str}\n"
+        prompt = f"System: {system_content}\n\n"
         for msg in allowed_recent_history:
             role = msg.get("role", "user").capitalize()
             content = msg.get("content", "")
