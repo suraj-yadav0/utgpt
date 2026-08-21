@@ -86,9 +86,15 @@ Page {
         })
     }
 
-    function attachDocument(fileUrl) {
-        if (!fileUrl) return;
+    function attachDocument(fileUrl, onComplete) {
+        if (!fileUrl) {
+            if (onComplete) onComplete();
+            return;
+        }
         python.call("backend.attach_document", [fileUrl, root.currentSessionId || ""], function(result) {
+            if (onComplete) {
+                onComplete();
+            }
             if (result) {
                 if (result.session_id && root.currentSessionId !== result.session_id) {
                     root.currentSessionId = result.session_id
@@ -1052,10 +1058,11 @@ Page {
                     ]
                 }
                 item.fileSelected.connect(function(fileUrl) {
-                    chatPage.attachDocument(fileUrl)
-                    if (item.hasOwnProperty("finalizeTransfer")) {
-                        item.finalizeTransfer()
-                    }
+                    chatPage.attachDocument(fileUrl, function() {
+                        if (item && item.hasOwnProperty("finalizeTransfer")) {
+                            item.finalizeTransfer()
+                        }
+                    })
                 })
             }
         }
@@ -1077,10 +1084,11 @@ Page {
                     ]
                 }
                 item.fileSelected.connect(function(fileUrl) {
-                    chatPage.attachDocument(fileUrl)
-                    if (item.hasOwnProperty("finalizeTransfer")) {
-                        item.finalizeTransfer()
-                    }
+                    chatPage.attachDocument(fileUrl, function() {
+                        if (item && item.hasOwnProperty("finalizeTransfer")) {
+                            item.finalizeTransfer()
+                        }
+                    })
                 })
             }
         }

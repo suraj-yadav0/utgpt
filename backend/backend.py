@@ -15,6 +15,8 @@ import tarfile
 import io
 import time
 import sys
+import shutil
+import json
 import sqlite3
 from html.parser import HTMLParser
 
@@ -110,6 +112,7 @@ except ImportError:  # pragma: no cover - only unavailable outside the app runti
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 MODELS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/models")
+ATTACHMENTS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/attachments")
 LLAMA_CLI_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-cli")
 LLAMA_CLI_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-cli")
 LLAMA_COMPLETION_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-completion")
@@ -1346,9 +1349,27 @@ def attach_document(file_path, session_id=None):
         return None
     if file_path.startswith("file://"):
         file_path = urllib.parse.unquote(file_path[7:])
+        if file_path.startswith("localhost/"):
+            file_path = file_path[9:]
+        if not file_path.startswith("/"):
+            file_path = "/" + file_path
+
     if not os.path.exists(file_path):
         log_error(f"attach_document: file does not exist: {file_path}")
         return None
+
+    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+    filename = os.path.basename(file_path)
+
+    # Save a permanent copy in attachments directory so Content Hub cleanup doesn't delete it
+    dest_filename = f"{int(time.time())}_{filename}"
+    dest_path = os.path.join(ATTACHMENTS_DIR, dest_filename)
+    try:
+        shutil.copy2(file_path, dest_path)
+        stored_path = dest_path
+    except Exception as copy_err:
+        log_error(f"Could not copy attachment to persistent storage: {copy_err}")
+        stored_path = file_path
 
     init_db()
     conn = sqlite3.connect(DB_PATH)
@@ -1364,19 +1385,18 @@ def attach_document(file_path, session_id=None):
             session_id = cursor.lastrowid
             conn.commit()
 
-    filename = os.path.basename(file_path)
-    file_size = os.path.getsize(file_path)
-    ext = os.path.splitext(file_path)[1].lower()
+    file_size = os.path.getsize(stored_path)
+    ext = os.path.splitext(stored_path)[1].lower()
     is_image = ext in IMAGE_EXTENSIONS
     file_type = "image" if is_image else ("pdf" if ext == ".pdf" else "document")
 
-    extracted_text = extract_text_from_file(file_path)
+    extracted_text = extract_text_from_file(stored_path)
     char_count = len(extracted_text)
 
     cursor.execute("""
         INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (session_id, filename, file_path, file_size, char_count, time.time()))
+    """, (session_id, filename, stored_path, file_size, char_count, time.time()))
     doc_id = cursor.lastrowid
 
     chunks = chunk_text(extracted_text)
@@ -1397,7 +1417,7 @@ def attach_document(file_path, session_id=None):
         "id": doc_id,
         "session_id": session_id,
         "filename": filename,
-        "file_path": file_path,
+        "file_path": stored_path,
         "file_size": file_size,
         "char_count": char_count,
         "chunk_count": len(chunks),
@@ -1454,6 +1474,15 @@ def delete_session_document(document_id):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute("SELECT file_path FROM documents WHERE id = ?", (document_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        fp = row[0]
+        if fp.startswith(ATTACHMENTS_DIR) and os.path.exists(fp):
+            try:
+                os.remove(fp)
+            except OSError:
+                pass
     cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
     cursor.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.commit()
