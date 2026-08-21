@@ -9,4 +9,5 @@ kill: qmlscene
 skip_review: true
 postbuild:
   - if [ -f assets/llama-cli ]; then chmod +x assets/llama-cli; fi
+  - if [ -f assets/tesseract ]; then chmod +x assets/tesseract; fi
 

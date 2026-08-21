@@ -27,4 +27,12 @@ Item {
     function open() {
         fileDialog.open()
     }
+
+    function openCamera() {
+        fileDialog.open()
+    }
+
+    function openGallery() {
+        fileDialog.open()
+    }
 }

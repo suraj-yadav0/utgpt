@@ -27,6 +27,9 @@ def log_debug(msg):
 def log_info(msg):
     print("UTGPT_LOG [INFO]: {0}".format(msg), file=sys.stderr, flush=True)
 
+def log_warn(msg):
+    print("UTGPT_LOG [WARN]: {0}".format(msg), file=sys.stderr, flush=True)
+
 def log_error(msg):
     print("UTGPT_LOG [ERROR]: {0}".format(msg), file=sys.stderr, flush=True)
 
@@ -1186,6 +1189,116 @@ def _extract_pdf_text(file_path):
     result = " ".join(text_parts).strip()
     return result if result else "[PDF Document attached]"
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico", ".svg"}
+
+def _get_tesseract_path_and_tessdata():
+    """Finds available tesseract binary and tessdata directory."""
+    import shutil
+    tesseract_candidates = [
+        os.path.join(APP_DIR, "assets", "tesseract"),
+        os.path.join(APP_DIR, "assets", "bin", "tesseract"),
+        os.path.join(APP_DIR, "bin", "tesseract"),
+        shutil.which("tesseract"),
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract"
+    ]
+    tesseract_bin = None
+    for cand in tesseract_candidates:
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            tesseract_bin = cand
+            break
+
+    tessdata_candidates = [
+        os.path.join(APP_DIR, "assets", "tessdata"),
+        os.path.join(APP_DIR, "tessdata"),
+        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/share/tesseract-ocr/5/tessdata",
+        "/usr/share/tessdata",
+        "/usr/local/share/tessdata"
+    ]
+    tessdata_dir = None
+    for cand in tessdata_candidates:
+        if cand and os.path.isdir(cand):
+            tessdata_dir = cand
+            break
+
+    return tesseract_bin, tessdata_dir
+
+def _extract_image_ocr(file_path, lang="eng"):
+    """Extracts text from an image file using Tesseract OCR or pytesseract."""
+    if not file_path or not os.path.exists(file_path):
+        log_error(f"Image file for OCR not found: {file_path}")
+        return ""
+
+    filename = os.path.basename(file_path)
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+
+    if tesseract_bin:
+        try:
+            env = os.environ.copy()
+            if tessdata_dir:
+                env["TESSDATA_PREFIX"] = tessdata_dir
+            log_info(f"Running OCR on '{filename}' using binary '{tesseract_bin}' (lang={lang})...")
+            cmd = [tesseract_bin, file_path, "stdout", "-l", lang]
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                timeout=45
+            )
+            if res.returncode == 0:
+                extracted = res.stdout.strip()
+                if extracted:
+                    log_info(f"OCR successfully extracted {len(extracted)} characters from '{filename}'.")
+                    return extracted
+                else:
+                    log_info(f"OCR finished for '{filename}', but no textual content was detected.")
+                    return "[Image attached: No readable text detected in this image.]"
+            else:
+                log_error(f"Tesseract OCR process returned code {res.returncode}: {res.stderr.strip()}")
+        except Exception as e:
+            log_error(f"Failed to execute Tesseract binary on {filename}: {e}")
+
+    # Fallback to pytesseract if installed in python environment
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(file_path)
+        extracted = pytesseract.image_to_string(img, lang=lang).strip()
+        if extracted:
+            log_info(f"pytesseract successfully extracted {len(extracted)} characters from '{filename}'.")
+            return extracted
+        else:
+            return "[Image attached: No readable text detected in this image.]"
+    except ImportError:
+        pass
+    except Exception as e:
+        log_error(f"pytesseract extraction error on {filename}: {e}")
+
+    log_warn(f"No OCR engine available to extract text from '{filename}'.")
+    return f"[Image attached: {filename}. (Note: OCR engine tesseract is not available to extract text).]"
+
+def get_ocr_info():
+    """Returns OCR availability status and engine details."""
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+    has_bin = bool(tesseract_bin and os.path.isfile(tesseract_bin))
+    has_pytesseract = False
+    try:
+        import pytesseract
+        has_pytesseract = True
+    except ImportError:
+        pass
+
+    available = has_bin or has_pytesseract
+    return {
+        "available": available,
+        "binary_path": tesseract_bin or "",
+        "tessdata_path": tessdata_dir or "",
+        "engine": "tesseract" if has_bin else ("pytesseract" if has_pytesseract else "none")
+    }
+
 def extract_text_from_file(file_path):
     if not file_path:
         return ""
@@ -1196,7 +1309,9 @@ def extract_text_from_file(file_path):
         return ""
 
     ext = os.path.splitext(file_path)[1].lower()
-    if ext == ".pdf":
+    if ext in IMAGE_EXTENSIONS:
+        return _extract_image_ocr(file_path)
+    elif ext == ".pdf":
         return _extract_pdf_text(file_path)
 
     try:
@@ -1251,6 +1366,10 @@ def attach_document(file_path, session_id=None):
 
     filename = os.path.basename(file_path)
     file_size = os.path.getsize(file_path)
+    ext = os.path.splitext(file_path)[1].lower()
+    is_image = ext in IMAGE_EXTENSIONS
+    file_type = "image" if is_image else ("pdf" if ext == ".pdf" else "document")
+
     extracted_text = extract_text_from_file(file_path)
     char_count = len(extracted_text)
 
@@ -1261,6 +1380,9 @@ def attach_document(file_path, session_id=None):
     doc_id = cursor.lastrowid
 
     chunks = chunk_text(extracted_text)
+    if not chunks and extracted_text:
+        chunks = [extracted_text]
+
     for idx, c in enumerate(chunks):
         cursor.execute("""
             INSERT INTO document_chunks (document_id, session_id, chunk_index, content)
@@ -1270,7 +1392,7 @@ def attach_document(file_path, session_id=None):
     conn.commit()
     conn.close()
 
-    log_info(f"Attached document '{filename}' (ID: {doc_id}) to session {session_id} with {len(chunks)} chunks.")
+    log_info(f"Attached {file_type} '{filename}' (ID: {doc_id}) to session {session_id} with {len(chunks)} chunks, {char_count} chars.")
     return {
         "id": doc_id,
         "session_id": session_id,
@@ -1278,7 +1400,9 @@ def attach_document(file_path, session_id=None):
         "file_path": file_path,
         "file_size": file_size,
         "char_count": char_count,
-        "chunk_count": len(chunks)
+        "chunk_count": len(chunks),
+        "file_type": file_type,
+        "is_image": is_image
     }
 
 def get_session_documents(session_id=None):
@@ -1306,6 +1430,11 @@ def get_session_documents(session_id=None):
 
     result = []
     for r in rows:
+        fname = r[2]
+        fpath = r[3]
+        ext = os.path.splitext(fpath or fname)[1].lower()
+        is_image = ext in IMAGE_EXTENSIONS
+        file_type = "image" if is_image else ("pdf" if ext == ".pdf" else "document")
         result.append({
             "id": r[0],
             "session_id": r[1],
@@ -1313,7 +1442,9 @@ def get_session_documents(session_id=None):
             "file_path": r[3],
             "file_size": r[4],
             "char_count": r[5],
-            "created_at": r[6]
+            "created_at": r[6],
+            "file_type": file_type,
+            "is_image": is_image
         })
     return result
 
@@ -1404,9 +1535,13 @@ def retrieve_document_context(query, session_id=None, limit=4):
     if not selected_chunks:
         return ""
 
-    context_str = "Attached Document Context (Local Files):\n"
+    context_str = "Attached Context (Local Documents & Image OCR):\n"
     for item in selected_chunks:
-        context_str += f"[{item['filename']} - chunk {item['chunk_index'] + 1}]:\n{item['content']}\n\n"
+        fname = item['filename']
+        ext = os.path.splitext(fname)[1].lower()
+        is_img = ext in IMAGE_EXTENSIONS
+        prefix = "Attached Image (OCR Extracted Text)" if is_img else "Attached Document"
+        context_str += f"[{prefix}: {fname} - chunk {item['chunk_index'] + 1}]:\n{item['content']}\n\n"
     return context_str.strip()
 
 def get_model_metadata(model_filename):
@@ -2074,7 +2209,8 @@ def initialize():
         "debug": DEBUG_MODE,
         "isDesktop": is_desktop,
         "version": app_version,
-        "releaseNotes": rel_notes
+        "releaseNotes": rel_notes,
+        "ocr": get_ocr_info()
     }
 
 

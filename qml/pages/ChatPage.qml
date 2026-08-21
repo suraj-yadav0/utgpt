@@ -8,6 +8,7 @@
 import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
+import Lomiri.Components.Popups 1.3
 import QtQuick.Controls 2.2 as QQC2
 import "../components"
 
@@ -59,6 +60,7 @@ Page {
     onBackendReadyChanged: {
         if (backendReady) {
             docPickerLoader.source = root.isDesktop ? "../components/DesktopFilePicker.qml" : "../components/LomiriFilePicker.qml"
+            picturePickerLoader.source = root.isDesktop ? "../components/DesktopFilePicker.qml" : "../components/LomiriPicturePicker.qml"
         }
     }
 
@@ -75,7 +77,9 @@ Page {
                         "filePath": result[i].file_path,
                         "fileSize": result[i].file_size,
                         "charCount": result[i].char_count,
-                        "chunkCount": result[i].chunk_count || 1
+                        "chunkCount": result[i].chunk_count || 1,
+                        "fileType": result[i].file_type || "document",
+                        "isImage": !!result[i].is_image
                     })
                 }
             }
@@ -91,10 +95,19 @@ Page {
                     root.refreshSessions()
                 }
                 loadSessionDocuments(root.currentSessionId)
-                root.showNotification(
-                    i18n.tr("Document Attached"),
-                    i18n.tr("Successfully attached and indexed '%1' (%2 chunks)").arg(result.filename).arg(result.chunk_count)
-                )
+                if (result.is_image) {
+                    root.showNotification(
+                        i18n.tr("Image Attached"),
+                        result.char_count > 0 ?
+                            i18n.tr("Extracted %1 characters via OCR from '%2'").arg(result.char_count).arg(result.filename) :
+                            i18n.tr("Attached image '%1' (No text recognized)").arg(result.filename)
+                    )
+                } else {
+                    root.showNotification(
+                        i18n.tr("Document Attached"),
+                        i18n.tr("Successfully attached and indexed '%1' (%2 chunks)").arg(result.filename).arg(result.chunk_count)
+                    )
+                }
             }
         })
     }
@@ -737,25 +750,23 @@ Page {
 
 
 
-        Loader {
-            id: docPickerLoader
-            onLoaded: {
-                if (item) {
-                    if (item.hasOwnProperty("title")) {
-                        item.title = i18n.tr("Select Document File")
+        Component {
+            id: attachmentChoiceDialogComponent
+            AttachmentChoiceDialog {
+                onCameraRequested: {
+                    if (picturePickerLoader.item) {
+                        picturePickerLoader.item.openCamera()
                     }
-                    if (item.hasOwnProperty("nameFilters")) {
-                        item.nameFilters = [
-                            "Document files (*.txt *.md *.pdf *.json *.csv *.py *.js *.c *.cpp *.qml *.html *.xml *.yaml *.yml)",
-                            "All files (*)"
-                        ]
+                }
+                onGalleryRequested: {
+                    if (picturePickerLoader.item) {
+                        picturePickerLoader.item.openGallery()
                     }
-                    item.fileSelected.connect(function(fileUrl) {
-                        chatPage.attachDocument(fileUrl)
-                        if (item.hasOwnProperty("finalizeTransfer")) {
-                            item.finalizeTransfer()
-                        }
-                    })
+                }
+                onDocPickerRequested: {
+                    if (docPickerLoader.item) {
+                        docPickerLoader.item.open()
+                    }
                 }
             }
         }
@@ -795,7 +806,7 @@ Page {
                             spacing: units.gu(0.6)
 
                             Icon {
-                                name: "document"
+                                name: model.isImage ? "camera" : "document"
                                 width: units.gu(1.8)
                                 height: units.gu(1.8)
                                 color: root.themeTextColor
@@ -811,7 +822,7 @@ Page {
                             }
 
                             Label {
-                                text: "(" + model.chunkCount + " chunks)"
+                                text: model.isImage ? (model.charCount > 0 ? ("(" + model.charCount + " chars OCR)") : "(Image)") : ("(" + model.chunkCount + " chunks)")
                                 fontSize: "x-small"
                                 color: root.secondaryTextColor
                             }
@@ -876,9 +887,7 @@ Page {
                     }
 
                     onClicked: {
-                        if (docPickerLoader.item) {
-                            docPickerLoader.item.open()
-                        }
+                        PopupUtils.open(attachmentChoiceDialogComponent, root)
                     }
                 }
 
@@ -887,7 +896,7 @@ Page {
                     Layout.fillWidth: true
                     Layout.preferredHeight: units.gu(4.5)
                     Layout.alignment: Qt.AlignVCenter
-                    placeholderText: attachedDocsModel.count > 0 ? i18n.tr("Ask about attached documents...") : i18n.tr("Type a message...")
+                    placeholderText: attachedDocsModel.count > 0 ? i18n.tr("Ask about attached documents or images...") : i18n.tr("Type a message...")
                     enabled: !chatPage.isResponding
                     onAccepted: chatPage.sendMessage()
                 }
@@ -1023,6 +1032,56 @@ Page {
                         chatPage.sendMessage()
                     }
                 }
+            }
+        }
+    }
+
+    Loader {
+        id: docPickerLoader
+        anchors.fill: parent
+        z: 1000
+        onLoaded: {
+            if (item) {
+                if (item.hasOwnProperty("title")) {
+                    item.title = i18n.tr("Select Document File")
+                }
+                if (item.hasOwnProperty("nameFilters")) {
+                    item.nameFilters = [
+                        "Document files (*.txt *.md *.pdf *.json *.csv *.py *.js *.c *.cpp *.qml *.html *.xml *.yaml *.yml)",
+                        "All files (*)"
+                    ]
+                }
+                item.fileSelected.connect(function(fileUrl) {
+                    chatPage.attachDocument(fileUrl)
+                    if (item.hasOwnProperty("finalizeTransfer")) {
+                        item.finalizeTransfer()
+                    }
+                })
+            }
+        }
+    }
+
+    Loader {
+        id: picturePickerLoader
+        anchors.fill: parent
+        z: 1000
+        onLoaded: {
+            if (item) {
+                if (item.hasOwnProperty("title")) {
+                    item.title = i18n.tr("Select or Capture Image")
+                }
+                if (item.hasOwnProperty("nameFilters")) {
+                    item.nameFilters = [
+                        "Image files (*.png *.jpg *.jpeg *.webp *.bmp *.tiff *.tif *.gif *.svg)",
+                        "All files (*)"
+                    ]
+                }
+                item.fileSelected.connect(function(fileUrl) {
+                    chatPage.attachDocument(fileUrl)
+                    if (item.hasOwnProperty("finalizeTransfer")) {
+                        item.finalizeTransfer()
+                    }
+                })
             }
         }
     }
