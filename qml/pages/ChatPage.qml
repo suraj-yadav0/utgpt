@@ -107,10 +107,20 @@ Page {
                             i18n.tr("Image OCR Complete"),
                             i18n.tr("Recognized %1 characters from '%2'").arg(result.ocr_chars).arg(result.filename)
                         )
-                    } else if (result.ocr_downloading) {
+                    } else if (result.ocr_downloading || result.ocr_error === "downloading") {
                         root.showNotification(
                             i18n.tr("Setting up OCR Engine"),
-                            i18n.tr("Downloading Tesseract OCR engine in background. Please wait a moment and try again.")
+                            i18n.tr("Downloading Tesseract OCR engine in background. Your image is saved; re-attach it in a moment to scan.")
+                        )
+                    } else if (result.ocr_error === "no_text") {
+                        root.showNotification(
+                            i18n.tr("No Text Found"),
+                            i18n.tr("Attached '%1' but no readable text was detected. Try a clearer, well-lit photo.").arg(result.filename)
+                        )
+                    } else if (result.ocr_error === "engine_not_ready") {
+                        root.showNotification(
+                            i18n.tr("OCR Not Ready"),
+                            i18n.tr("OCR engine is not ready yet. Your image is saved; please try again shortly.")
                         )
                     } else {
                         root.showNotification(
@@ -302,7 +312,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, root.currentSessionId || "", pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -355,7 +365,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, root.currentSessionId || "", pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1

@@ -156,16 +156,51 @@ TESSDATA_DIR_WRITABLE = os.path.join(MODELS_DIR, "tessdata")
 TESSERACT_DOWNLOADING = False
 TESSERACT_READY = False
 TESSERACT_ERROR = None
+_OCR_DL_LOCK = threading.Lock()
 
-def is_tesseract_working(bin_path, tessdata_path=None):
+def _tessdata_has_lang(tessdata_path, lang="eng"):
+    # True when the traineddata file is there and looks real.
+    if not tessdata_path or not os.path.isdir(tessdata_path):
+        return False
+    trained = os.path.join(tessdata_path, lang + ".traineddata")
+    try:
+        return os.path.isfile(trained) and os.path.getsize(trained) > 100000
+    except OSError:
+        return False
+
+
+def _tesseract_env(tessdata_path=None):
+    # TESSDATA_PREFIX wants the parent of tessdata/, not tessdata/ itself.
+    env = os.environ.copy()
+    if tessdata_path and os.path.isdir(tessdata_path):
+        parent = os.path.dirname(os.path.abspath(tessdata_path))
+        env["TESSDATA_PREFIX"] = parent
+    return env
+
+
+def is_tesseract_working(bin_path, tessdata_path=None, lang="eng"):
     if not bin_path or not os.path.exists(bin_path):
         return False
     try:
-        env = os.environ.copy()
-        if tessdata_path and os.path.exists(tessdata_path):
-            env["TESSDATA_PREFIX"] = tessdata_path
+        env = _tesseract_env(tessdata_path)
         res = subprocess.run([bin_path, "--version"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
-        return res.returncode == 0
+        if res.returncode != 0:
+            return False
+        # --version passes even without traineddata, so check the language
+        # data loads too. Otherwise OCR dies later with "Failed loading language".
+        if tessdata_path and not _tessdata_has_lang(tessdata_path, lang):
+            return False
+        args = [bin_path, "--list-langs"]
+        if tessdata_path:
+            args += ["--tessdata-dir", tessdata_path]
+        res = subprocess.run(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        if res.returncode == 0:
+            out = (res.stdout or b"").decode("utf-8", errors="ignore")
+            if lang in [l.strip() for l in out.splitlines()]:
+                return True
+            # --list-langs unsupported or lang missing: fall back to file check
+            return _tessdata_has_lang(tessdata_path, lang) if tessdata_path else True
+        return _tessdata_has_lang(tessdata_path, lang) if tessdata_path else True
     except Exception:
         return False
 
@@ -1215,8 +1250,8 @@ def _extract_pdf_text(file_path):
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".ico", ".svg"}
 
-def _get_tesseract_path_and_tessdata():
-    """Finds available tesseract binary and tessdata directory."""
+def _get_tesseract_path_and_tessdata(lang="eng"):
+    # Only trust a tessdata dir that actually has the traineddata.
     tesseract_candidates = [
         TESSERACT_PATH_WRITABLE,
         TESSERACT_PATH_BUNDLED,
@@ -1242,12 +1277,18 @@ def _get_tesseract_path_and_tessdata():
         "/usr/local/share/tessdata"
     ]
     tessdata_dir = None
+    fallback_dir = None
     for cand in tessdata_candidates:
         if cand and os.path.isdir(cand):
-            tessdata_dir = cand
-            break
+            if fallback_dir is None:
+                fallback_dir = cand
+            if _tessdata_has_lang(cand, lang):
+                tessdata_dir = cand
+                break
 
-    return tesseract_bin, tessdata_dir
+    # Prefer a dir with the language data; fall back to the first dir
+    # around so callers can report "traineddata missing" precisely.
+    return tesseract_bin, tessdata_dir or fallback_dir
 
 def ensure_tesseract_ocr():
     """Ensures a working static Tesseract OCR binary and English traineddata exist."""
@@ -1255,7 +1296,14 @@ def ensure_tesseract_ocr():
     tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
     if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir):
         TESSERACT_READY = True
+        TESSERACT_ERROR = None
         return True
+
+    # Log what's missing so the UI can say something useful.
+    if not tesseract_bin:
+        log_info("No working Tesseract binary found; will download a static build.")
+    elif not tessdata_dir or not _tessdata_has_lang(tessdata_dir):
+        log_info("Tesseract binary present but eng.traineddata missing; will fetch traineddata.")
 
     os.makedirs(MODELS_DIR, exist_ok=True)
     os.makedirs(TESSDATA_DIR_WRITABLE, exist_ok=True)
@@ -1270,12 +1318,19 @@ def ensure_tesseract_ocr():
         log_info(f"Downloading static Tesseract OCR binary ({target_arch}) from {bin_url}...")
         try:
             req = urllib.request.Request(bin_url, headers={"User-Agent": "UTGPT/0.1"})
-            with urllib.request.urlopen(req, timeout=60) as resp, open(TESSERACT_PATH_WRITABLE, "wb") as out:
+            with _urlopen(req, timeout=120) as resp, open(TESSERACT_PATH_WRITABLE, "wb") as out:
                 shutil.copyfileobj(resp, out)
             os.chmod(TESSERACT_PATH_WRITABLE, 0o755)
+            if os.path.getsize(TESSERACT_PATH_WRITABLE) < 1000000:
+                raise Exception("Downloaded binary is suspiciously small ({0} bytes); likely an error page.".format(os.path.getsize(TESSERACT_PATH_WRITABLE)))
         except Exception as e:
             log_error(f"Failed to download Tesseract binary: {e}")
             TESSERACT_ERROR = f"Binary download error: {e}"
+            try:
+                if os.path.exists(TESSERACT_PATH_WRITABLE):
+                    os.remove(TESSERACT_PATH_WRITABLE)
+            except OSError:
+                pass
             return False
 
     eng_path = os.path.join(TESSDATA_DIR_WRITABLE, "eng.traineddata")
@@ -1283,8 +1338,10 @@ def ensure_tesseract_ocr():
         log_info(f"Downloading OCR English traineddata from {tessdata_url}...")
         try:
             req = urllib.request.Request(tessdata_url, headers={"User-Agent": "UTGPT/0.1"})
-            with urllib.request.urlopen(req, timeout=60) as resp, open(eng_path, "wb") as out:
+            with _urlopen(req, timeout=120) as resp, open(eng_path, "wb") as out:
                 shutil.copyfileobj(resp, out)
+            if os.path.getsize(eng_path) < 100000:
+                raise Exception("Downloaded traineddata is suspiciously small; likely an error page.")
         except Exception as e:
             log_error(f"Failed to download eng.traineddata: {e}")
             TESSERACT_ERROR = f"Tessdata download error: {e}"
@@ -1296,76 +1353,291 @@ def ensure_tesseract_ocr():
         TESSERACT_ERROR = None
         return True
     else:
-        TESSERACT_ERROR = "Tesseract binary verification failed."
+        TESSERACT_ERROR = "Tesseract binary verification failed (binary runs but eng language data did not load)."
         log_error(TESSERACT_ERROR)
         return False
 
 def download_tesseract_in_background():
     global TESSERACT_DOWNLOADING, TESSERACT_READY, TESSERACT_ERROR
-    if TESSERACT_DOWNLOADING:
-        return
-    TESSERACT_DOWNLOADING = True
-    TESSERACT_ERROR = None
+    # No early return here: the starter holds single-flight under the lock,
+    # and skipping the finally would wedge TESSERACT_DOWNLOADING on True.
     try:
         ensure_tesseract_ocr()
     except Exception as e:
         TESSERACT_ERROR = str(e)
     finally:
-        TESSERACT_DOWNLOADING = False
+        with _OCR_DL_LOCK:
+            TESSERACT_DOWNLOADING = False
 
 def start_ocr_engine_download():
+    global TESSERACT_DOWNLOADING
+    with _OCR_DL_LOCK:
+        if TESSERACT_DOWNLOADING:
+            return
+        # Flip the flag here, not in the thread: otherwise callers checking
+        # it right after this call miss the download in progress.
+        TESSERACT_DOWNLOADING = True
     thread = threading.Thread(target=download_tesseract_in_background)
     thread.daemon = True
     thread.start()
 
+
+def _extract_svg_text(file_path):
+    # SVGs with real <text> nodes give exact text, better than OCR.
+    # Returns "" for outlined paths so callers try rasterize + OCR.
+    try:
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(file_path)
+        parts = []
+        for el in tree.getroot().iter():
+            tag = el.tag
+            if isinstance(tag, str) and tag.lower().endswith("text"):
+                txt = "".join(el.itertext()).strip()
+                if txt:
+                    parts.append(txt)
+        return "\n".join(parts).strip()
+    except Exception as e:
+        log_error(f"SVG text extraction failed: {e}")
+        return ""
+
+
+def _rasterize_svg(file_path):
+    # PIL can't read SVG, so try whatever renderer exists. (None, None) if none.
+    out = file_path + ".raster.png"
+    try:
+        import cairosvg
+        cairosvg.svg2png(url=file_path, write_to=out, scale=3.0)
+        return out, out
+    except ImportError:
+        pass
+    except Exception as e:
+        log_error(f"cairosvg rasterization failed: {e}")
+    for cmd in (["rsvg-convert", "-w", "1200", "-o", out, file_path],
+                ["convert", "-density", "300", "-background", "white", "-flatten", file_path, out]):
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            if res.returncode == 0 and os.path.exists(out):
+                return out, out
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            log_error(f"SVG rasterizer {' '.join(cmd[:1])} failed: {e}")
+    return None, None
+
+
+def _prepare_image_for_ocr(file_path):
+    # Tesseract can't read some formats and ignores EXIF orientation, so
+    # normalize first: transpose, flatten, and cap size. Returns (path, tmp).
+    ext = os.path.splitext(file_path)[1].lower()
+    needs_convert = ext in (".svg", ".ico", ".gif", ".webp")
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return file_path, None
+
+    try:
+        img = Image.open(file_path)
+    except Exception as e:
+        log_error(f"Could not open image for OCR preprocessing: {e}")
+        return file_path, None
+
+    try:
+        # Flatten transparency / palettes; take first frame of animations.
+        try:
+            img.seek(0)
+        except Exception:
+            pass
+        if getattr(img, "is_animated", False):
+            try:
+                img.seek(0)
+            except Exception:
+                pass
+        # EXIF first: portrait phone shots reach Tesseract sideways otherwise.
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        if img.mode in ("RGBA", "LA", "PA"):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            try:
+                background.paste(img, mask=img.split()[-1])
+            except Exception:
+                background.paste(img)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        w, h = img.size
+        # Big photos only slow OCR down, cap at 2000px.
+        max_dim = max(w, h)
+        if max_dim > 2000:
+            scale = 2000.0 / float(max_dim)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            w, h = img.size
+        # Tiny images need ~300 DPI equivalent, scale up.
+        min_dim = min(w, h)
+        if 0 < min_dim < 1000:
+            scale = min(3.0, 1000.0 / float(min_dim))
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            min_dim = min(img.size)
+
+        if needs_convert or min_dim < 1000 or max_dim > 2000 or ext not in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif"):
+            tmp = file_path + ".ocr.png"
+            img.save(tmp, "PNG")
+            return tmp, tmp
+        return file_path, None
+    except Exception as e:
+        log_error(f"Image preprocessing failed, using original file: {e}")
+        return file_path, None
+
+
+# Word list to tell real OCR text apart from rotation garbage. Lenient on
+# purpose: ties keep the original orientation, so other languages are safe.
+_COMMON_OCR_WORDS = frozenset(
+    "the be to of and a in that have i it for not on with he as you do at "
+    "this but his by from they we say her she or an will my one all would "
+    "there their what so up out if about who get which go me when make can "
+    "like time no just him know take people into year your good some could "
+    "them see other than then now look only come its over think also back "
+    "after use two how our work first well way even new want because any "
+    "these give day most us is are was were has had hello please price total "
+    "date name address phone email street road park hotel menu open".split()
+)
+
+def _text_quality_score(text):
+    # Share of alpha words found in the common list, plus word count.
+    import re
+    if not text:
+        return 0.0, 0
+    words = re.findall(r"[A-Za-z]{2,}", text.lower())
+    if not words:
+        return 0.0, 0
+    good = sum(1 for w in words if w in _COMMON_OCR_WORDS)
+    return good / len(words), len(words)
+
+
+def _run_tesseract(bin_path, image_path, tessdata_dir, lang="eng", psm=3):
+    # One tesseract pass. Returns (returncode, stdout, stderr).
+    env = _tesseract_env(tessdata_dir)
+    cmd = [bin_path, image_path, "stdout", "-l", lang]
+    if tessdata_dir:
+        cmd += ["--tessdata-dir", tessdata_dir]
+    # LSTM engine + automatic page segmentation; caller may retry with psm 6.
+    cmd += ["--oem", "1", "--psm", str(psm)]
+    res = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        timeout=60
+    )
+    return res.returncode, res.stdout, res.stderr
+
 def _extract_image_ocr(file_path, lang="eng"):
-    """Extracts text from an image file using Tesseract OCR or pytesseract."""
+    # Image -> text via Tesseract. Returns "" on failure: placeholders must
+    # never land in document_chunks, they'd end up in the prompt as fake text.
     if not file_path or not os.path.exists(file_path):
         log_error(f"Image file for OCR not found: {file_path}")
         return ""
 
     filename = os.path.basename(file_path)
-    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
+    ext = os.path.splitext(file_path)[1].lower()
 
-    if not tesseract_bin or not is_tesseract_working(tesseract_bin, tessdata_dir):
-        if not TESSERACT_DOWNLOADING:
-            start_ocr_engine_download()
-        # If download is running, give it a moment to complete
-        if TESSERACT_DOWNLOADING:
-            for _ in range(12):
-                time.sleep(0.5)
-                tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
-                if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir):
-                    break
+    # SVG is markup, not pixels: grab <text> nodes first, OCR the rendering after.
+    if ext == ".svg":
+        svg_text = _extract_svg_text(file_path)
+        if svg_text:
+            log_info(f"SVG text extraction yielded {len(svg_text)} characters from '{filename}'.")
+            return svg_text
+        raster, raster_tmp = _rasterize_svg(file_path)
+        if raster:
+            try:
+                result = _extract_image_ocr(raster, lang)
+                return result
+            finally:
+                if raster_tmp and os.path.exists(raster_tmp):
+                    try:
+                        os.remove(raster_tmp)
+                    except OSError:
+                        pass
+        log_info(f"SVG '{filename}' has no extractable text and no rasterizer is available.")
+        return ""
 
-    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata()
-    if tesseract_bin:
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata(lang)
+
+    if not tesseract_bin or not is_tesseract_working(tesseract_bin, tessdata_dir, lang):
+        start_ocr_engine_download()
+        # Wait up to ~30s for the download, bail early once it's done.
+        for _ in range(60):
+            time.sleep(0.5)
+            tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata(lang)
+            if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir, lang):
+                break
+            if not TESSERACT_DOWNLOADING:
+                break
+
+    tesseract_bin, tessdata_dir = _get_tesseract_path_and_tessdata(lang)
+    if tesseract_bin and is_tesseract_working(tesseract_bin, tessdata_dir, lang):
+        ocr_path, tmp_path = _prepare_image_for_ocr(file_path)
+        temp_files = [tmp_path] if tmp_path else []
         try:
-            env = os.environ.copy()
-            if tessdata_dir:
-                env["TESSDATA_PREFIX"] = tessdata_dir
             log_info(f"Running OCR on '{filename}' using binary '{tesseract_bin}' (lang={lang})...")
-            cmd = [tesseract_bin, file_path, "stdout", "-l", lang]
-            res = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                timeout=45
-            )
-            if res.returncode == 0:
-                extracted = res.stdout.strip()
-                if extracted:
-                    log_info(f"OCR successfully extracted {len(extracted)} characters from '{filename}'.")
-                    return extracted
-                else:
-                    log_info(f"OCR finished for '{filename}', but no textual content was detected.")
-                    return "[Image attached: No readable text detected in this image.]"
-            else:
-                log_error(f"Tesseract OCR process returned code {res.returncode}: {res.stderr.strip()}")
+
+            def _ocr_single(path, psm):
+                rc, out, err = _run_tesseract(tesseract_bin, path, tessdata_dir, lang, psm)
+                if rc != 0:
+                    log_error(f"Tesseract OCR (psm={psm}) failed on '{filename}' (code {rc}): {(err or '').strip()[:300]}")
+                    return ""
+                return (out or "").strip()
+
+            # Try upright first, that's the common case.
+            extracted = _ocr_single(ocr_path, 3) or _ocr_single(ocr_path, 6)
+            score, nwords = _text_quality_score(extracted)
+
+            # Garbage text usually means a rotated photo EXIF didn't fix, so
+            # try the other orientations and keep the best. Needs enough
+            # words to judge; ties keep the original.
+            if extracted and nwords >= 8 and score < 0.12:
+                log_info(f"OCR quality low for '{filename}' (score={score:.2f}); trying rotated orientations...")
+                try:
+                    from PIL import Image
+                    base = Image.open(ocr_path)
+                    best_text, best_score, best_len = extracted, score, len(extracted)
+                    for angle in (90, 180, 270):
+                        rot_path = ocr_path + f".rot{angle}.png"
+                        try:
+                            base.rotate(angle, expand=True).save(rot_path, "PNG")
+                            temp_files.append(rot_path)
+                        except Exception as e:
+                            log_error(f"Rotation {angle} failed for '{filename}': {e}")
+                            continue
+                        cand = _ocr_single(rot_path, 3)
+                        cs, _ = _text_quality_score(cand)
+                        if cand and (cs > best_score + 0.02 or (abs(cs - best_score) <= 0.02 and len(cand) > best_len)):
+                            best_text, best_score, best_len = cand, cs, len(cand)
+                    if best_text is not extracted:
+                        log_info(f"OCR orientation fix for '{filename}': score {score:.2f} -> {best_score:.2f}.")
+                    extracted = best_text
+                except ImportError:
+                    pass
+                except Exception as e:
+                    log_error(f"OCR rotation retry failed for '{filename}': {e}")
+
+            if extracted:
+                log_info(f"OCR successfully extracted {len(extracted)} characters from '{filename}'.")
+                return extracted
+            log_info(f"OCR finished for '{filename}' with no detectable text.")
+            return ""
         except Exception as e:
             log_error(f"Failed to execute Tesseract binary on {filename}: {e}")
+        finally:
+            for tmp in temp_files:
+                if tmp and os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
 
     # Fallback to pytesseract if installed in python environment
     try:
@@ -1376,15 +1648,14 @@ def _extract_image_ocr(file_path, lang="eng"):
         if extracted:
             log_info(f"pytesseract successfully extracted {len(extracted)} characters from '{filename}'.")
             return extracted
-        else:
-            return "[Image attached: No readable text detected in this image.]"
+        return ""
     except ImportError:
         pass
     except Exception as e:
         log_error(f"pytesseract extraction error on {filename}: {e}")
 
     log_warn(f"No OCR engine available to extract text from '{filename}'.")
-    return "[Image attached: OCR engine is downloading or not yet ready. Please try attaching the image again in a few moments.]"
+    return ""
 
 def get_ocr_info():
     """Returns OCR availability status and engine details."""
@@ -1496,9 +1767,19 @@ def attach_document(file_path, session_id=None):
     file_type = "image" if is_image else ("pdf" if ext == ".pdf" else "document")
 
     extracted_text = extract_text_from_file(stored_path)
+    extracted_text = (extracted_text or "").strip()
     char_count = len(extracted_text)
-    ocr_success = is_image and bool(extracted_text and not extracted_text.startswith("[Image attached:") and len(extracted_text.strip()) > 0)
-    ocr_chars = len(extracted_text) if ocr_success else 0
+    ocr_success = is_image and char_count > 0
+    ocr_chars = char_count if ocr_success else 0
+    ocr_error = ""
+    if is_image and not ocr_success:
+        ocr_info = get_ocr_info()
+        if ocr_info.get("downloading"):
+            ocr_error = "downloading"
+        elif not ocr_info.get("available"):
+            ocr_error = "engine_not_ready"
+        else:
+            ocr_error = "no_text"
 
     cursor.execute("""
         INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
@@ -1509,6 +1790,8 @@ def attach_document(file_path, session_id=None):
     chunks = chunk_text(extracted_text)
     if not chunks and extracted_text:
         chunks = [extracted_text]
+    # Empty text stores zero chunks. Fake placeholder text must never be
+    # indexed (old rows with it get skipped when reading back).
 
     for idx, c in enumerate(chunks):
         cursor.execute("""
@@ -1532,7 +1815,8 @@ def attach_document(file_path, session_id=None):
         "is_image": is_image,
         "ocr_success": ocr_success,
         "ocr_chars": ocr_chars,
-        "ocr_downloading": TESSERACT_DOWNLOADING
+        "ocr_error": ocr_error,
+        "ocr_downloading": TESSERACT_DOWNLOADING or ocr_error == "downloading"
     }
 
 def get_session_documents(session_id=None):
@@ -1556,6 +1840,15 @@ def get_session_documents(session_id=None):
         ORDER BY id ASC
     """, (session_id,))
     rows = cursor.fetchall()
+    doc_ids = [r[0] for r in rows]
+    chunk_counts = {}
+    if doc_ids:
+        placeholders = ",".join("?" for _ in doc_ids)
+        cursor.execute(
+            f"SELECT document_id, COUNT(*) FROM document_chunks WHERE document_id IN ({placeholders}) GROUP BY document_id",
+            doc_ids,
+        )
+        chunk_counts = {r[0]: r[1] for r in cursor.fetchall()}
     conn.close()
 
     result = []
@@ -1573,6 +1866,7 @@ def get_session_documents(session_id=None):
             "file_size": r[4],
             "char_count": r[5],
             "created_at": r[6],
+            "chunk_count": chunk_counts.get(r[0], 0),
             "file_type": file_type,
             "is_image": is_image
         })
@@ -1605,18 +1899,23 @@ def retrieve_document_context(query, session_id=None, limit=6):
     cursor = conn.cursor()
 
     if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
-        cursor.execute("SELECT session_id FROM messages WHERE session_id IS NOT NULL ORDER BY id DESC LIMIT 1")
+        cursor.execute("SELECT session_id FROM documents ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         if row and row[0]:
             session_id = row[0]
         else:
-            cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+            cursor.execute("SELECT session_id FROM messages WHERE session_id IS NOT NULL ORDER BY id DESC LIMIT 1")
             row = cursor.fetchone()
-            if row:
+            if row and row[0]:
                 session_id = row[0]
             else:
-                conn.close()
-                return ""
+                cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+                row = cursor.fetchone()
+                if row:
+                    session_id = row[0]
+                else:
+                    conn.close()
+                    return ""
 
     cursor.execute("SELECT id, filename, char_count FROM documents WHERE session_id = ? ORDER BY id ASC", (session_id,))
     doc_rows = cursor.fetchall()
@@ -1637,10 +1936,17 @@ def retrieve_document_context(query, session_id=None, limit=6):
         """, (d_id,))
         chunks_for_doc = cursor.fetchall()
         for row in chunks_for_doc:
+            content = (row[2] or "").strip()
+            if not content:
+                continue
+            # Leftovers from before the fix, e.g. "[Image attached: ...]".
+            # Those would reach the model as fake transcript text.
+            if content.startswith("[Image attached:") or content.startswith("[PDF Document attached]"):
+                continue
             selected_chunks.append({
                 "filename": row[0],
                 "chunk_index": row[1],
-                "content": row[2],
+                "content": content,
                 "is_image": is_img
             })
 
@@ -1655,7 +1961,7 @@ def retrieve_document_context(query, session_id=None, limit=6):
         ext = os.path.splitext(fname)[1].lower()
         is_img = item.get('is_image', ext in IMAGE_EXTENSIONS)
         if is_img:
-            context_str += f"[Attached Image: '{fname}' (OCR Transcribed Text)]:\n\"\"\"\n{item['content']}\n\"\"\"\n\n"
+            context_str += f"[Attached file: '{fname}' (text extracted from the file)]:\n\"\"\"\n{item['content']}\n\"\"\"\n\n"
         else:
             context_str += f"[Attached Document: '{fname}' (Part {item['chunk_index'] + 1})]:\n\"\"\"\n{item['content']}\n\"\"\"\n\n"
 
@@ -1712,15 +2018,52 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
         else:
             template_type = "default"
 
-    # Context budgeting: reserve 25% of context window for generation
+    # Keep 25% of the window free for generation. Doc context goes in the
+    # system prompt once (never duplicated into the user turn), history
+    # fills what's left.
     safe_token_budget = int(max_context * 0.75)
     query_tokens = len(current_query) // 4
-    
-    allowed_recent_history = []
-    allowed_context_msgs = []
-    current_tokens = query_tokens + 50  # buffer for system prompt structure
 
-    # 1. Budget recent chat history first (newest to oldest)
+    doc_context_str = ""
+    web_context_str = ""
+    history_rag_str = ""
+    for msg in context_msgs:
+        text_cleaned = (msg.get("text", "") or "").strip()
+        if not text_cleaned:
+            continue
+        if text_cleaned.startswith("Web Search Results"):
+            web_context_str += f"{text_cleaned}\n\n"
+        elif text_cleaned.startswith("Attached Context"):
+            doc_context_str += f"{text_cleaned}\n\n"
+        else:
+            history_rag_str += f"- {text_cleaned}\n"
+
+    doc_context_str = doc_context_str.strip()
+    web_context_str = web_context_str.strip()
+    history_rag_str = history_rag_str.strip()
+
+    system_instruction_parts = ["You are a helpful, knowledgeable AI assistant."]
+
+    if doc_context_str:
+        system_instruction_parts.append(
+            "The user has provided the text content of their file(s) below — it was extracted from the files and shown to you in full. "
+            "This text IS the file content and you CAN read and use it. "
+            "Answer the user's questions directly from this text (translate, summarize, quote, or extract details as requested). "
+            "Never claim you cannot access attached files or images, even if the user asks about an 'image': the extracted text below is its content, so just use it:\n\n"
+            + doc_context_str
+        )
+
+    if web_context_str:
+        system_instruction_parts.append(web_context_str)
+
+    if history_rag_str:
+        system_instruction_parts.append("Relevant facts and details from previous conversations:\n" + history_rag_str)
+
+    system_content = "\n\n".join(system_instruction_parts)
+
+    # Budget: system (incl. full doc context) + query first, then history.
+    current_tokens = len(system_content) // 4 + query_tokens
+    allowed_recent_history = []
     for msg in reversed(recent_history):
         content = msg.get("content", "")
         msg_tok = len(content) // 4
@@ -1728,46 +2071,9 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             allowed_recent_history.insert(0, msg)
             current_tokens += msg_tok
 
-    # 2. Budget RAG & OCR context next
-    for msg in context_msgs:
-        text = msg.get("text", "")
-        msg_tok = len(text) // 4
-        if current_tokens + msg_tok < safe_token_budget:
-            allowed_context_msgs.append(msg)
-            current_tokens += msg_tok
-
-    doc_context_str = ""
-    web_context_str = ""
-    history_rag_str = ""
-
-    if allowed_context_msgs:
-        for msg in allowed_context_msgs:
-            text_cleaned = msg.get("text", "").strip()
-            if not text_cleaned:
-                continue
-            if text_cleaned.startswith("Web Search Results"):
-                web_context_str += f"{text_cleaned}\n\n"
-            elif text_cleaned.startswith("Attached Context"):
-                doc_context_str += f"{text_cleaned}\n\n"
-            else:
-                history_rag_str += f"- {text_cleaned}\n"
-
-    system_instruction_parts = ["You are a helpful, knowledgeable AI assistant."]
-
-    if doc_context_str:
-        system_instruction_parts.append(
-            "The user has attached the following image(s) or document(s) with their transcribed textual contents. "
-            "You have direct access to this text below. Always refer to this transcribed text to answer the user's questions, translate, summarize, or extract details as requested:\n\n"
-            + doc_context_str.strip()
-        )
-
-    if web_context_str:
-        system_instruction_parts.append(web_context_str.strip())
-
-    if history_rag_str:
-        system_instruction_parts.append("Relevant facts and details from previous conversations:\n" + history_rag_str.strip())
-
-    system_content = "\n\n".join(system_instruction_parts)
+    # Attached text lives in the system prompt only. It used to be copied
+    # into the user turn too, which blew the context budget on small models.
+    user_turn_content = current_query
 
     # Format using resolved template_type
     prompt = ""
@@ -1778,7 +2084,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|start_header_id|>{role}<|end_header_id|>\n\n{content}<|eot_id|>"
-        prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{current_query}<|eot_id|>"
+        prompt += f"<|start_header_id|>user<|end_header_id|>\n\n{user_turn_content}<|eot_id|>"
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n\n"
         boundary = "<|start_header_id|>assistant<|end_header_id|>\n\n"
 
@@ -1788,7 +2094,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-        prompt += f"<|im_start|>user\n{current_query}<|im_end|>\n"
+        prompt += f"<|im_start|>user\n{user_turn_content}<|im_end|>\n"
         prompt += "<|im_start|>assistant\n"
         boundary = "<|im_start|>assistant\n"
 
@@ -1798,7 +2104,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|{role}|>\n{content}</s>\n"
-        prompt += f"<|user|>\n{current_query}</s>\n"
+        prompt += f"<|user|>\n{user_turn_content}</s>\n"
         prompt += "<|assistant|>\n"
         boundary = "<|assistant|>\n"
 
@@ -1809,7 +2115,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<start_of_turn>{role}\n{content}<end_of_turn>\n"
-        prompt += f"<start_of_turn>user\n{current_query}<end_of_turn>\n"
+        prompt += f"<start_of_turn>user\n{user_turn_content}<end_of_turn>\n"
         prompt += "<start_of_turn>assistant\n"
         boundary = "<start_of_turn>assistant\n"
 
@@ -1820,7 +2126,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user")
             content = msg.get("content", "")
             prompt += f"<|{role}|>\n{content}<|end|>\n"
-        prompt += f"<|user|>\n{current_query}<|end|>\n"
+        prompt += f"<|user|>\n{user_turn_content}<|end|>\n"
         prompt += "<|assistant|>\n"
         boundary = "<|assistant|>\n"
 
@@ -1830,7 +2136,7 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
             role = msg.get("role", "user").capitalize()
             content = msg.get("content", "")
             prompt += f"{role}: {content}\n"
-        prompt += f"User: {current_query}\nAssistant:"
+        prompt += f"User: {user_turn_content}\nAssistant:"
         boundary = "Assistant:"
 
     if "deepseek-r1" in model_lower:
@@ -1839,14 +2145,43 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
     return prompt, boundary
 
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
-    # Support backward compatible dynamic signatures
+    # session_id is optional and comes right before the two callbacks:
+    # [..., web_search_enabled, (session_id,) token_callback, done_callback]
     threads = 4
     ctx_size = 2048
     flash_attn = "auto"
     kv_cache = "f16"
     web_search_enabled = False
+    session_id = None
     token_callback = None
     done_callback = None
+
+    def _take_trailing_callbacks(rem):
+        # Pulls out [.., (session_id,) tok, done]. "chat-<ts>" style ids are
+        # callbacks, plain numbers are session ids.
+        nonlocal token_callback, done_callback, session_id
+        if len(rem) == 2:
+            token_callback, done_callback = rem
+            return None
+        elif len(rem) >= 3:
+            *maybe_session, tok, done = rem
+            first = maybe_session[0] if maybe_session else None
+            if first is None or first == "" or (isinstance(first, (int, float)) and not isinstance(first, bool)):
+                session_id = first
+                token_callback, done_callback = tok, done
+                return session_id
+            try:
+                # Numeric strings ("12") are session ids; "chat-..." is a request id.
+                int(str(first))
+                session_id = first
+                token_callback, done_callback = tok, done
+                return session_id
+            except (ValueError, TypeError):
+                token_callback, done_callback = tok, done
+                return None
+        elif len(rem) == 1:
+            token_callback = rem[0]
+        return None
 
     if len(args) == 2:
         token_callback, done_callback = args
@@ -1855,7 +2190,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     elif len(args) == 6:
         threads, ctx_size, flash_attn, kv_cache, token_callback, done_callback = args
     elif len(args) >= 7:
-        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = args[:7]
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled = args[:5]
+        session_id = _take_trailing_callbacks(list(args[5:]))
     elif len(args) > 0:
         if not isinstance(args[0], (str, callable)):
             try:
@@ -1883,7 +2219,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             if len(args) > 1: done_callback = args[1]
 
     web_search_enabled = bool(web_search_enabled)
-    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_enabled))
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}, session={5}".format(model_filename, threads, ctx_size, flash_attn, web_search_enabled, session_id))
     
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
@@ -1940,7 +2276,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             for msg in recent_history:
                 exclude_texts.add(msg.get("content", ""))
 
-            doc_context = retrieve_document_context(current_query)
+            doc_context = retrieve_document_context(current_query, session_id=session_id)
             doc_context_msgs = [{"role": "system", "text": doc_context}] if doc_context else []
 
             context_msgs = web_context_msgs + doc_context_msgs + retrieve_relevant_context(current_query, exclude_texts, limit=3)
