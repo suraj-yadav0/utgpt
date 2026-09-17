@@ -62,6 +62,9 @@ file(GLOB_RECURSE PROJECT_SRC_FILES
     RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     qml/*.qml
     qml/*.js
+    tests/*.qml
+    tests/*.js
+    tests/*.sh
     backend/*.py
     src/*
     *.json

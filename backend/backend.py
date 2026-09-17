@@ -1720,57 +1720,172 @@ def chunk_text(text, chunk_size=600, overlap=100):
             break
     return chunks
 
-def attach_document(file_path, session_id=None):
+def _normalize_file_url(file_path):
+    # Shared file:// handling for attachments, imports, and text extraction.
     if not file_path:
-        return None
+        return file_path
     if file_path.startswith("file://"):
+        import urllib.parse
         file_path = urllib.parse.unquote(file_path[7:])
         if file_path.startswith("localhost/"):
             file_path = file_path[9:]
         if not file_path.startswith("/"):
             file_path = "/" + file_path
+    return file_path
 
-    if not os.path.exists(file_path):
-        log_error(f"attach_document: file does not exist: {file_path}")
-        return None
 
-    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
-    filename = os.path.basename(file_path)
-
-    # Save a permanent copy in attachments directory so Content Hub cleanup doesn't delete it
-    dest_filename = f"{int(time.time())}_{filename}"
-    dest_path = os.path.join(ATTACHMENTS_DIR, dest_filename)
-    try:
-        shutil.copy2(file_path, dest_path)
-        stored_path = dest_path
-    except Exception as copy_err:
-        log_error(f"Could not copy attachment to persistent storage: {copy_err}")
-        stored_path = file_path
-
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    if not session_id or str(session_id).strip() == "" or str(session_id) == "null":
+def _resolve_session(cursor, session_id):
+    # Returns a usable session id, creating one when none exists.
+    if not session_id or str(session_id).strip() in ("", "null"):
         cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
         row = cursor.fetchone()
         if row:
-            session_id = row[0]
-        else:
-            cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("New Chat", time.time()))
-            session_id = cursor.lastrowid
-            conn.commit()
+            return row[0]
+        cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("New Chat", time.time()))
+        return cursor.lastrowid
+    return session_id
 
-    file_size = os.path.getsize(stored_path)
+
+def _copy_to_attachments(file_path):
+    # Fast persistent copy so Content Hub cleanup can't pull the file away.
+    os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
+    filename = os.path.basename(file_path)
+    dest_path = os.path.join(ATTACHMENTS_DIR, f"{int(time.time() * 1000)}_{filename}")
+    try:
+        shutil.copy2(file_path, dest_path)
+        return dest_path, filename
+    except Exception as copy_err:
+        log_error(f"Could not copy attachment to persistent storage: {copy_err}")
+        return file_path, filename
+
+
+def _find_recent_duplicate(cursor, session_id, filename, file_size, window_sec=15):
+    # Second emit of the same pick (double signal, re-fired Charged state)
+    # lands here within seconds. Return the existing row instead of a copy.
+    try:
+        cutoff = time.time() - window_sec
+        cursor.execute("""
+            SELECT id, filename, file_path, file_size, char_count, created_at
+            FROM documents
+            WHERE session_id = ? AND filename = ? AND file_size = ?
+              AND created_at > ?
+            ORDER BY id DESC LIMIT 1
+        """, (session_id, filename, file_size, cutoff))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        cursor.execute("SELECT COUNT(*) FROM document_chunks WHERE document_id = ?", (row[0],))
+        chunks = cursor.fetchone()[0]
+        return {
+            "id": row[0], "filename": row[1], "file_path": row[2],
+            "file_size": row[3], "char_count": row[4] or 0,
+            "created_at": row[5], "chunk_count": chunks,
+        }
+    except Exception:
+        return None
+
+
+def _describe_stored_file(stored_path, filename):
     ext = os.path.splitext(stored_path)[1].lower()
     is_image = ext in IMAGE_EXTENSIONS
     file_type = "image" if is_image else ("pdf" if ext == ".pdf" else "document")
+    return ext, is_image, file_type
 
-    extracted_text = extract_text_from_file(stored_path)
-    extracted_text = (extracted_text or "").strip()
-    char_count = len(extracted_text)
+
+def stage_attachment(file_path, session_id=None):
+    """Fast half of the attach flow: copy + DB row, no OCR/parsing.
+
+    QML finalizes the Content Hub transfer right after this returns,
+    then calls index_attachment() for the slow text extraction.
+    Waiting for OCR before finalizing kept the transfer in Charged
+    state for seconds, during which a re-fired state change attached
+    the same image a second time.
+    """
+    file_path = _normalize_file_url(file_path)
+    if not file_path or not os.path.exists(file_path):
+        log_error(f"stage_attachment: file does not exist: {file_path}")
+        return None
+
+    stored_path, filename = _copy_to_attachments(file_path)
+    try:
+        file_size = os.path.getsize(stored_path)
+    except OSError:
+        log_error(f"stage_attachment: cannot stat file: {stored_path}")
+        return None
+
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        session_id = _resolve_session(cursor, session_id)
+
+        existing = _find_recent_duplicate(cursor, session_id, filename, file_size)
+        if existing:
+            log_info(f"stage_attachment: duplicate pick of '{filename}' ignored, reusing ID {existing['id']}.")
+            ext, is_image, file_type = _describe_stored_file(existing["file_path"], filename)
+            conn.close()
+            return {
+                "id": existing["id"],
+                "session_id": session_id,
+                "filename": filename,
+                "file_path": existing["file_path"],
+                "file_size": existing["file_size"],
+                "char_count": existing["char_count"],
+                "chunk_count": existing["chunk_count"],
+                "file_type": file_type,
+                "is_image": is_image,
+                "staged": True,
+                "deduped": True,
+            }
+
+        cursor.execute("""
+            INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (session_id, filename, stored_path, file_size, 0, time.time()))
+        doc_id = cursor.lastrowid
+        conn.commit()
+        ext, is_image, file_type = _describe_stored_file(stored_path, filename)
+        log_info(f"Staged '{filename}' (ID: {doc_id}) for session {session_id}.")
+        return {
+            "id": doc_id,
+            "session_id": session_id,
+            "filename": filename,
+            "file_path": stored_path,
+            "file_size": file_size,
+            "char_count": 0,
+            "chunk_count": 0,
+            "file_type": file_type,
+            "is_image": is_image,
+            "staged": True,
+            "deduped": False,
+        }
+    finally:
+        conn.close()
+
+
+def index_attachment(document_id):
+    """Slow half of the attach flow: OCR/parse the staged file, store chunks."""
+    if not document_id:
+        return None
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, session_id, filename, file_path, file_size
+        FROM documents WHERE id = ?
+    """, (document_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        log_error(f"index_attachment: unknown document ID {document_id}")
+        return None
+    doc_id, session_id, filename, stored_path, file_size = row
+    conn.close()
+
+    ext, is_image, file_type = _describe_stored_file(stored_path, filename)
+    extracted = (extract_text_from_file(stored_path) or "").strip()
+    char_count = len(extracted)
     ocr_success = is_image and char_count > 0
-    ocr_chars = char_count if ocr_success else 0
     ocr_error = ""
     if is_image and not ocr_success:
         ocr_info = get_ocr_info()
@@ -1781,28 +1896,25 @@ def attach_document(file_path, session_id=None):
         else:
             ocr_error = "no_text"
 
-    cursor.execute("""
-        INSERT INTO documents (session_id, filename, file_path, file_size, char_count, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (session_id, filename, stored_path, file_size, char_count, time.time()))
-    doc_id = cursor.lastrowid
+    chunks = chunk_text(extracted)
+    if not chunks and extracted:
+        chunks = [extracted]
 
-    chunks = chunk_text(extracted_text)
-    if not chunks and extracted_text:
-        chunks = [extracted_text]
-    # Empty text stores zero chunks. Fake placeholder text must never be
-    # indexed (old rows with it get skipped when reading back).
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM document_chunks WHERE document_id = ?", (doc_id,))
+        for idx, c in enumerate(chunks):
+            cursor.execute("""
+                INSERT INTO document_chunks (document_id, session_id, chunk_index, content)
+                VALUES (?, ?, ?, ?)
+            """, (doc_id, session_id, idx, c))
+        cursor.execute("UPDATE documents SET char_count = ? WHERE id = ?", (char_count, doc_id))
+        conn.commit()
+    finally:
+        conn.close()
 
-    for idx, c in enumerate(chunks):
-        cursor.execute("""
-            INSERT INTO document_chunks (document_id, session_id, chunk_index, content)
-            VALUES (?, ?, ?, ?)
-        """, (doc_id, session_id, idx, c))
-
-    conn.commit()
-    conn.close()
-
-    log_info(f"Attached {file_type} '{filename}' (ID: {doc_id}) to session {session_id} with {len(chunks)} chunks, {char_count} chars.")
+    log_info(f"Indexed '{filename}' (ID: {doc_id}) with {len(chunks)} chunks, {char_count} chars.")
     return {
         "id": doc_id,
         "session_id": session_id,
@@ -1814,10 +1926,43 @@ def attach_document(file_path, session_id=None):
         "file_type": file_type,
         "is_image": is_image,
         "ocr_success": ocr_success,
-        "ocr_chars": ocr_chars,
+        "ocr_chars": char_count if ocr_success else 0,
         "ocr_error": ocr_error,
-        "ocr_downloading": TESSERACT_DOWNLOADING or ocr_error == "downloading"
+        "ocr_downloading": TESSERACT_DOWNLOADING or ocr_error == "downloading",
+        "deduped": False,
     }
+
+
+def attach_document(file_path, session_id=None):
+    # Single-call path kept for older QML/desktop: stage (fast, deduped)
+    # then index (slow). New QML calls the two halves separately so it
+    # can finalize the Content Hub transfer between them.
+    staged = stage_attachment(file_path, session_id)
+    if not staged:
+        return None
+    if staged.get("deduped") and staged.get("chunk_count", 0) > 0:
+        ext, is_image, file_type = _describe_stored_file(staged["file_path"], staged["filename"])
+        ocr_success = is_image and staged["char_count"] > 0
+        return {
+            "id": staged["id"],
+            "session_id": staged["session_id"],
+            "filename": staged["filename"],
+            "file_path": staged["file_path"],
+            "file_size": staged["file_size"],
+            "char_count": staged["char_count"],
+            "chunk_count": staged["chunk_count"],
+            "file_type": file_type,
+            "is_image": is_image,
+            "ocr_success": ocr_success,
+            "ocr_chars": staged["char_count"] if ocr_success else 0,
+            "ocr_error": "",
+            "ocr_downloading": False,
+            "deduped": True,
+        }
+    result = index_attachment(staged["id"])
+    if result:
+        result["deduped"] = staged.get("deduped", False)
+    return result
 
 def get_session_documents(session_id=None):
     init_db()

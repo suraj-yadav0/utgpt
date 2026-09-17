@@ -11,6 +11,7 @@ import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
 import QtQuick.Controls 2.2 as QQC2
 import "../components"
+import "../js/ChatUtils.js" as ChatUtils
 
 Page {
     id: chatPage
@@ -57,6 +58,12 @@ Page {
         id: attachedDocsModel
     }
 
+    // Guards against the same pick arriving twice (re-fired Charged state,
+    // double signal connection). Same URL within a few seconds is one attach.
+    property var _inFlightUrls: ({})
+    property string _lastAttachUrl: ""
+    property double _lastAttachTime: 0
+
     onBackendReadyChanged: {
         if (backendReady) {
             docPickerLoader.source = root.isDesktop ? "../components/DesktopFilePicker.qml" : "../components/LomiriFilePicker.qml"
@@ -86,55 +93,167 @@ Page {
         })
     }
 
-    function attachDocument(fileUrl, onComplete) {
-        if (!fileUrl) {
-            if (onComplete) onComplete();
-            return;
-        }
-        python.call("backend.attach_document", [fileUrl, root.currentSessionId || ""], function(result) {
-            if (onComplete) {
-                onComplete();
+    function _finalizePicker(picker) {
+        try {
+            if (picker && typeof picker.finalizeTransfer === "function") {
+                picker.finalizeTransfer()
+                return
             }
+        } catch (e) {}
+        try {
+            if (docPickerLoader.item && typeof docPickerLoader.item.finalizeTransfer === "function") {
+                docPickerLoader.item.finalizeTransfer()
+            }
+        } catch (e) {}
+        try {
+            if (picturePickerLoader.item && typeof picturePickerLoader.item.finalizeTransfer === "function") {
+                picturePickerLoader.item.finalizeTransfer()
+            }
+        } catch (e) {}
+    }
+
+    function _notifyAttach(result) {
+        if (!result) return
+        if (result.deduped) {
+            root.showNotification(
+                i18n.tr("Already Attached"),
+                i18n.tr("'%1' is already attached.").arg(result.filename)
+            )
+            return
+        }
+        if (result.is_image) {
+            if (result.ocr_success && result.ocr_chars > 0) {
+                root.showNotification(
+                    i18n.tr("Image OCR Complete"),
+                    i18n.tr("Recognized %1 characters from '%2'").arg(result.ocr_chars).arg(result.filename)
+                )
+            } else if (result.ocr_downloading || result.ocr_error === "downloading") {
+                root.showNotification(
+                    i18n.tr("Setting up OCR Engine"),
+                    i18n.tr("Downloading Tesseract OCR engine in background. Your image is saved; re-attach it in a moment to scan.")
+                )
+            } else if (result.ocr_error === "no_text") {
+                root.showNotification(
+                    i18n.tr("No Text Found"),
+                    i18n.tr("Attached '%1' but no readable text was detected. Try a clearer, well-lit photo.").arg(result.filename)
+                )
+            } else if (result.ocr_error === "engine_not_ready") {
+                root.showNotification(
+                    i18n.tr("OCR Not Ready"),
+                    i18n.tr("OCR engine is not ready yet. Your image is saved; please try again shortly.")
+                )
+            } else {
+                root.showNotification(
+                    i18n.tr("Image Attached"),
+                    i18n.tr("Attached image '%1'").arg(result.filename)
+                )
+            }
+        } else {
+            root.showNotification(
+                i18n.tr("Document Attached"),
+                i18n.tr("Successfully attached and indexed '%1' (%2 chunks)").arg(result.filename).arg(result.chunk_count)
+            )
+        }
+    }
+
+    function _releaseAttach(fileUrl) {
+        var flights = _inFlightUrls || {}
+        delete flights[fileUrl]
+        _inFlightUrls = flights
+    }
+
+    function _indexStaged(staged, picker, onComplete) {
+        if (!staged || !staged.id) {
+            _releaseAttach(staged && staged.file_path)
+            _finalizePicker(picker)
+            if (onComplete) onComplete()
+            return
+        }
+        if (staged.session_id && root.currentSessionId !== staged.session_id) {
+            root.currentSessionId = staged.session_id
+            root.refreshSessions()
+        }
+        loadSessionDocuments(root.currentSessionId)
+        python.call("backend.index_attachment", [staged.id], function(result) {
+            _releaseAttach(staged.file_path)
+            if (!result && staged.file_path) {
+                _releaseAttach(staged.file_path)
+            }
+            _finalizePicker(picker)
+            if (onComplete) onComplete()
             if (result) {
                 if (result.session_id && root.currentSessionId !== result.session_id) {
                     root.currentSessionId = result.session_id
                     root.refreshSessions()
                 }
                 loadSessionDocuments(root.currentSessionId)
-                if (result.is_image) {
-                    if (result.ocr_success && result.ocr_chars > 0) {
-                        root.showNotification(
-                            i18n.tr("Image OCR Complete"),
-                            i18n.tr("Recognized %1 characters from '%2'").arg(result.ocr_chars).arg(result.filename)
-                        )
-                    } else if (result.ocr_downloading || result.ocr_error === "downloading") {
-                        root.showNotification(
-                            i18n.tr("Setting up OCR Engine"),
-                            i18n.tr("Downloading Tesseract OCR engine in background. Your image is saved; re-attach it in a moment to scan.")
-                        )
-                    } else if (result.ocr_error === "no_text") {
-                        root.showNotification(
-                            i18n.tr("No Text Found"),
-                            i18n.tr("Attached '%1' but no readable text was detected. Try a clearer, well-lit photo.").arg(result.filename)
-                        )
-                    } else if (result.ocr_error === "engine_not_ready") {
-                        root.showNotification(
-                            i18n.tr("OCR Not Ready"),
-                            i18n.tr("OCR engine is not ready yet. Your image is saved; please try again shortly.")
-                        )
-                    } else {
-                        root.showNotification(
-                            i18n.tr("Image Attached"),
-                            i18n.tr("Attached image '%1'").arg(result.filename)
-                        )
-                    }
-                } else {
-                    root.showNotification(
-                        i18n.tr("Document Attached"),
-                        i18n.tr("Successfully attached and indexed '%1' (%2 chunks)").arg(result.filename).arg(result.chunk_count)
-                    )
-                }
+                _notifyAttach(result)
             }
+        })
+    }
+
+    function attachDocument(fileUrl, picker, onComplete) {
+        if (typeof picker === "function" && !onComplete) {
+            onComplete = picker
+            picker = null
+        }
+        if (!fileUrl) {
+            if (onComplete) onComplete();
+            return;
+        }
+        var now = Date.now()
+        var guard = ChatUtils.attachGuard(fileUrl, _lastAttachUrl, _lastAttachTime, now, _inFlightUrls)
+        if (guard === "duplicate-time") {
+            _finalizePicker(picker)
+            if (onComplete) onComplete();
+            return;
+        }
+        if (guard === "in-flight") {
+            if (onComplete) onComplete();
+            return;
+        }
+        _lastAttachUrl = fileUrl
+        _lastAttachTime = now
+        var flights = _inFlightUrls || {}
+        flights[fileUrl] = true
+        _inFlightUrls = flights
+
+        // Fast stage first so the Content Hub transfer is finalized in
+        // milliseconds. OCR/indexing runs after, while Charged no longer
+        // blocks and can't re-fire a duplicate for the same image.
+        python.call("backend.stage_attachment", [fileUrl, root.currentSessionId || ""], function(staged) {
+            if (!staged) {
+                // Older backend without the split: single slow call.
+                python.call("backend.attach_document", [fileUrl, root.currentSessionId || ""], function(result) {
+                    _releaseAttach(fileUrl)
+                    _finalizePicker(picker)
+                    if (onComplete) onComplete();
+                    if (result) {
+                        if (result.session_id && root.currentSessionId !== result.session_id) {
+                            root.currentSessionId = result.session_id
+                            root.refreshSessions()
+                        }
+                        loadSessionDocuments(root.currentSessionId)
+                        _notifyAttach(result)
+                    }
+                })
+                return
+            }
+            if (staged.deduped) {
+                _releaseAttach(fileUrl)
+                _releaseAttach(staged.file_path)
+                _finalizePicker(picker)
+                if (onComplete) onComplete();
+                if (staged.session_id && root.currentSessionId !== staged.session_id) {
+                    root.currentSessionId = staged.session_id
+                    root.refreshSessions()
+                }
+                loadSessionDocuments(root.currentSessionId)
+                _notifyAttach(staged)
+                return
+            }
+            _finalizePicker(picker)
+            _indexStaged(staged, picker, onComplete)
         })
     }
 
@@ -224,23 +343,7 @@ Page {
 
         var lastIndex = messageModel.count - 1
         var currentText = messageModel.get(lastIndex).text
-        if (currentText === "..." || currentText.startsWith("Thinking")) {
-            currentText = ""
-        }
-        var newText = currentText + chunk
-
-        // Format reasoning blocks cleanly for markdown/text display
-        newText = newText.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
-                         .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
-                         .replace(/<\|im_end\|>/gi, "")
-                         .replace(/<\/im_end>/gi, "")
-                         .replace(/<\|im_start\|>/gi, "")
-                         .replace(/<end_of_turn>/gi, "")
-                         .replace(/<start_of_turn>/gi, "")
-                         .replace(/<\|end\|>/gi, "")
-                         .replace(/<\|eot_id\|>/gi, "")
-                         .replace(/<\|start_header_id\|>/gi, "")
-                         .replace(/\[end of text\]/gi, "")
+        var newText = ChatUtils.formatAssistantText(currentText, chunk)
 
         messageModel.setProperty(lastIndex, "text", newText)
         scrollToBottom()
@@ -296,13 +399,12 @@ Page {
         }
 
         // 3. Build history context
-        var history = []
+        var flat = []
         for (var i = 0; i < messageModel.count; i++) {
             var item = messageModel.get(i)
-            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking") && item.text !== "...")) {
-                history.push({ "role": item.role, "content": item.text })
-            }
+            flat.push({ "role": item.role, "text": item.text })
         }
+        var history = ChatUtils.buildHistory(flat)
 
         // 4. Start response generation
         messageModel.append({ "role": "assistant", "text": "Thinking" })
@@ -338,14 +440,12 @@ Page {
         }
 
         // Build history array of previous messages to pass as context
-        var history = []
+        var flat = []
         for (var i = 0; i < messageModel.count; i++) {
             var item = messageModel.get(i)
-            // Filter out system warnings or thinking states
-            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking" ) && item.text !== "...")) {
-                history.push({ "role": item.role, "content": item.text })
-            }
+            flat.push({ "role": item.role, "text": item.text })
         }
+        var history = ChatUtils.buildHistory(flat)
         history.push({ "role": "user", "content": trimmed })
 
         // Save user message to database
@@ -1078,11 +1178,7 @@ Page {
                     ]
                 }
                 item.fileSelected.connect(function(fileUrl) {
-                    chatPage.attachDocument(fileUrl, function() {
-                        if (item && item.hasOwnProperty("finalizeTransfer")) {
-                            item.finalizeTransfer()
-                        }
-                    })
+                    chatPage.attachDocument(fileUrl, item)
                 })
             }
         }
@@ -1104,11 +1200,7 @@ Page {
                     ]
                 }
                 item.fileSelected.connect(function(fileUrl) {
-                    chatPage.attachDocument(fileUrl, function() {
-                        if (item && item.hasOwnProperty("finalizeTransfer")) {
-                            item.finalizeTransfer()
-                        }
-                    })
+                    chatPage.attachDocument(fileUrl, item)
                 })
             }
         }

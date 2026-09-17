@@ -14,6 +14,34 @@ Item {
     signal fileSelected(string fileUrl)
 
     property var activeTransfer: null
+    // Same single-fire guard as the picture picker: ignore repeat
+    // Charged notifications for one transfer so a doc is never attached twice.
+    property bool _handled: false
+
+    function _startTransfer(t) {
+        _handled = false
+        activeTransfer = t
+    }
+
+    function _emitChargedItems() {
+        if (!activeTransfer || _handled) return
+        if (activeTransfer.state !== ContentTransfer.Charged) return
+        var items = activeTransfer.items
+        if (!items || items.length === 0) return
+        _handled = true
+        var seen = {}
+        for (var i = 0; i < items.length; i++) {
+            try {
+                var itemUrl = items[i].url.toString()
+                if (!itemUrl || seen[itemUrl]) continue
+                seen[itemUrl] = true
+                console.log("QML_LOG: LomiriFilePicker received file url: " + itemUrl)
+                pickerItem.fileSelected(itemUrl)
+            } catch (e) {
+                console.log("QML_LOG: LomiriFilePicker skipping bad item: " + e)
+            }
+        }
+    }
 
     // Model to query available document sources
     ContentPeerModel {
@@ -39,7 +67,7 @@ Item {
 
         onPeerSelected: {
             console.log("QML_LOG: LomiriFilePicker peer selected: " + peer.appId)
-            activeTransfer = peer.request()
+            _startTransfer(peer.request())
             peerPicker.visible = false
         }
 
@@ -61,14 +89,10 @@ Item {
             if (activeTransfer) {
                 console.log("QML_LOG: LomiriFilePicker transfer state changed: " + activeTransfer.state)
                 if (activeTransfer.state === ContentTransfer.Charged) {
-                    var items = activeTransfer.items
-                    if (items && items.length > 0) {
-                        var itemUrl = items[0].url.toString()
-                        console.log("QML_LOG: LomiriFilePicker received file url: " + itemUrl)
-                        pickerItem.fileSelected(itemUrl)
-                    }
+                    _emitChargedItems()
                 } else if (activeTransfer.state === ContentTransfer.Aborted) {
                     console.log("QML_LOG: LomiriFilePicker transfer aborted/cancelled.")
+                    _handled = false
                     activeTransfer = null
                 }
             }
@@ -82,6 +106,7 @@ Item {
                 activeTransfer.state = ContentTransfer.Collected
                 activeTransfer.finalize()
             }
+            _handled = false
             activeTransfer = null
         }
     }
@@ -106,7 +131,7 @@ Item {
 
         if (foundPeer) {
             console.log("QML_LOG: LomiriFilePicker launching file manager directly: " + foundPeer.appId)
-            activeTransfer = foundPeer.request()
+            _startTransfer(foundPeer.request())
         } else {
             // Fallback: if we didn't find any file manager, but peers list is populated,
             // show the peer picker. Otherwise try default file manager peer directly.
@@ -115,7 +140,7 @@ Item {
                 peerPicker.visible = true
             } else {
                 console.log("QML_LOG: LomiriFilePicker peers list empty/loading. Launching default file manager directly.")
-                activeTransfer = defaultFileManagerPeer.request()
+                _startTransfer(defaultFileManagerPeer.request())
             }
         }
     }

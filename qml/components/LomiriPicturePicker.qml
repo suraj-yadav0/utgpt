@@ -14,6 +14,35 @@ Item {
     signal fileSelected(string fileUrl)
 
     property var activeTransfer: null
+    // Single-fire guard: the transfer stays Charged until QML finalizes it,
+    // and stateChanged can re-fire in that window. Without this the same
+    // image is emitted twice, attaching the previous pick again.
+    property bool _handled: false
+
+    function _startTransfer(t) {
+        _handled = false
+        activeTransfer = t
+    }
+
+    function _emitChargedItems() {
+        if (!activeTransfer || _handled) return
+        if (activeTransfer.state !== ContentTransfer.Charged) return
+        var items = activeTransfer.items
+        if (!items || items.length === 0) return
+        _handled = true
+        var seen = {}
+        for (var i = 0; i < items.length; i++) {
+            try {
+                var itemUrl = items[i].url.toString()
+                if (!itemUrl || seen[itemUrl]) continue
+                seen[itemUrl] = true
+                console.log("QML_LOG: LomiriPicturePicker received image url: " + itemUrl)
+                pickerItem.fileSelected(itemUrl)
+            } catch (e) {
+                console.log("QML_LOG: LomiriPicturePicker skipping bad item: " + e)
+            }
+        }
+    }
 
     // Model to query available picture sources (Gallery, Camera, etc.)
     ContentPeerModel {
@@ -46,7 +75,7 @@ Item {
 
         onPeerSelected: {
             console.log("QML_LOG: LomiriPicturePicker peer selected: " + peer.appId)
-            activeTransfer = peer.request()
+            _startTransfer(peer.request())
             peerPicker.visible = false
         }
 
@@ -68,14 +97,10 @@ Item {
             if (activeTransfer) {
                 console.log("QML_LOG: LomiriPicturePicker transfer state changed: " + activeTransfer.state)
                 if (activeTransfer.state === ContentTransfer.Charged) {
-                    var items = activeTransfer.items
-                    if (items && items.length > 0) {
-                        var itemUrl = items[0].url.toString()
-                        console.log("QML_LOG: LomiriPicturePicker received image url: " + itemUrl)
-                        pickerItem.fileSelected(itemUrl)
-                    }
+                    _emitChargedItems()
                 } else if (activeTransfer.state === ContentTransfer.Aborted) {
                     console.log("QML_LOG: LomiriPicturePicker transfer aborted/cancelled.")
+                    _handled = false
                     activeTransfer = null
                 }
             }
@@ -89,6 +114,7 @@ Item {
                 activeTransfer.state = ContentTransfer.Collected
                 activeTransfer.finalize()
             }
+            _handled = false
             activeTransfer = null
         }
     }
@@ -108,10 +134,10 @@ Item {
         }
         if (foundPeer) {
             console.log("QML_LOG: LomiriPicturePicker launching camera directly: " + foundPeer.appId)
-            activeTransfer = foundPeer.request()
+            _startTransfer(foundPeer.request())
         } else {
             console.log("QML_LOG: LomiriPicturePicker launching default camera peer directly.")
-            activeTransfer = defaultCameraPeer.request()
+            _startTransfer(defaultCameraPeer.request())
         }
     }
 
@@ -130,10 +156,10 @@ Item {
         }
         if (foundPeer) {
             console.log("QML_LOG: LomiriPicturePicker launching gallery directly: " + foundPeer.appId)
-            activeTransfer = foundPeer.request()
+            _startTransfer(foundPeer.request())
         } else {
             console.log("QML_LOG: LomiriPicturePicker launching default gallery peer directly.")
-            activeTransfer = defaultGalleryPeer.request()
+            _startTransfer(defaultGalleryPeer.request())
         }
     }
 

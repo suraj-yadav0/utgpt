@@ -1,0 +1,26 @@
+name: QML Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  qml-tests:
+    name: Run qmltestrunner suites
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install UT QML test packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qtdeclarative5-dev-tools qml-module-qttest
+
+      - name: Run QML unit tests
+        run: |
+          ./tests/run_tests.sh -v2
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_SELECT: qt5

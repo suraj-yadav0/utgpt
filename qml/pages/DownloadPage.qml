@@ -9,6 +9,7 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import "../components"
+import "../js/DownloadUtils.js" as DownloadUtils
 
 Page {
     id: downloadPage
@@ -41,36 +42,34 @@ Page {
     property bool backendReady: false
 
     function updateDownloadStates(states) {
+        // Mirror DownloadUtils.applyDownloadStates() onto the ListModel
+        // so the UI stays in sync with the tested pure logic.
+        var items = []
         for (var row = 0; row < modelsList.count; row++) {
-            var item = modelsList.get(row)
-            var state = states[item.filename]
-            
-            if (state) {
-                if (state.status === "ready") {
-                    modelsList.setProperty(row, "ready", true)
-                    modelsList.setProperty(row, "downloading", false)
-                    modelsList.setProperty(row, "paused", false)
-                    modelsList.setProperty(row, "progress", 1.0)
-                } else if (state.status === "downloading") {
-                    modelsList.setProperty(row, "ready", false)
-                    modelsList.setProperty(row, "downloading", true)
-                    modelsList.setProperty(row, "paused", false)
-                    if (state.requestId) {
-                        modelsList.setProperty(row, "requestId", state.requestId)
-                    }
-                } else if (state.status === "paused") {
-                    modelsList.setProperty(row, "ready", false)
-                    modelsList.setProperty(row, "downloading", false)
-                    modelsList.setProperty(row, "paused", true)
-                    if (state.requestId) {
-                        modelsList.setProperty(row, "requestId", state.requestId)
-                    }
-                }
-            } else {
-                modelsList.setProperty(row, "ready", false)
-                modelsList.setProperty(row, "downloading", false)
-                modelsList.setProperty(row, "paused", false)
-                modelsList.setProperty(row, "progress", 0.0)
+            var current = modelsList.get(row)
+            items.push({
+                name: current.name,
+                filename: current.filename,
+                size: current.size,
+                description: current.description,
+                url: current.url,
+                progress: current.progress,
+                downloading: current.downloading,
+                paused: current.paused,
+                ready: current.ready,
+                requestId: current.requestId,
+                compatibility: current.compatibility,
+                compatibilityText: current.compatibilityText
+            })
+        }
+        var next = DownloadUtils.applyDownloadStates(items, states)
+        for (var i = 0; i < next.length; i++) {
+            modelsList.setProperty(i, "ready", next[i].ready)
+            modelsList.setProperty(i, "downloading", next[i].downloading)
+            modelsList.setProperty(i, "paused", next[i].paused)
+            modelsList.setProperty(i, "progress", next[i].progress)
+            if (next[i].requestId) {
+                modelsList.setProperty(i, "requestId", next[i].requestId)
             }
         }
     }
@@ -197,24 +196,26 @@ Page {
                     continue
                 }
 
-                if (data.event === "download_progress") {
-                    modelsList.setProperty(index, "progress", data.payload.progress)
-                    modelsList.setProperty(index, "downloading", true)
-                    modelsList.setProperty(index, "paused", false)
-                } else if (data.event === "download_paused") {
-                    modelsList.setProperty(index, "progress", data.payload.progress)
-                    modelsList.setProperty(index, "downloading", false)
-                    modelsList.setProperty(index, "paused", true)
-                } else if (data.event === "download_complete") {
-                    modelsList.setProperty(index, "progress", 1.0)
-                    modelsList.setProperty(index, "downloading", false)
-                    modelsList.setProperty(index, "paused", false)
-                    modelsList.setProperty(index, "ready", true)
+                var next = DownloadUtils.applyDownloadEvent({
+                    name: item.name,
+                    filename: item.filename,
+                    size: item.size,
+                    description: item.description,
+                    url: item.url,
+                    progress: item.progress,
+                    downloading: item.downloading,
+                    paused: item.paused,
+                    ready: item.ready,
+                    requestId: item.requestId,
+                    compatibility: item.compatibility,
+                    compatibilityText: item.compatibilityText
+                }, data.event, data.payload)
+                modelsList.setProperty(index, "progress", next.progress)
+                modelsList.setProperty(index, "downloading", next.downloading)
+                modelsList.setProperty(index, "paused", next.paused)
+                modelsList.setProperty(index, "ready", next.ready)
+                if (data.event === "download_complete") {
                     root.refreshModels()
-                } else if (data.event === "download_error") {
-                    modelsList.setProperty(index, "downloading", false)
-                    modelsList.setProperty(index, "paused", false)
-                    modelsList.setProperty(index, "progress", 0.0)
                 }
                 break
             }
@@ -224,42 +225,17 @@ Page {
     function populateModelsFromCatalog() {
         if (!root.modelCatalog || root.modelCatalog.length === 0) return;
         modelsList.clear();
-        
+
         var filterText = "";
         try {
             if (typeof searchInput !== "undefined" && searchInput) {
-                filterText = searchInput.text.toLowerCase().trim();
+                filterText = searchInput.text;
             }
         } catch(e) {}
 
-        for (var i = 0; i < root.modelCatalog.length; i++) {
-            var item = root.modelCatalog[i];
-            
-            if (filterText.length > 0) {
-                var nameMatch = (item.name && item.name.toLowerCase().indexOf(filterText) >= 0);
-                var descMatch = (item.description && item.description.toLowerCase().indexOf(filterText) >= 0);
-                var devMatch = (item.developer && item.developer.toLowerCase().indexOf(filterText) >= 0);
-                var usageMatch = (item.usage && item.usage.toLowerCase().indexOf(filterText) >= 0);
-                
-                if (!nameMatch && !descMatch && !devMatch && !usageMatch) {
-                    continue;
-                }
-            }
-
-            modelsList.append({
-                name: item.name,
-                filename: item.filename,
-                size: item.size,
-                description: item.description,
-                url: item.url,
-                progress: 0.0,
-                downloading: false,
-                paused: false,
-                ready: false,
-                requestId: "",
-                compatibility: item.compatibility || "yellow",
-                compatibilityText: item.compatibilityText || i18n.tr("Runs Fine")
-            });
+        var entries = DownloadUtils.buildModelEntries(root.modelCatalog, filterText);
+        for (var i = 0; i < entries.length; i++) {
+            modelsList.append(entries[i]);
         }
         refreshDownloadedModels();
     }

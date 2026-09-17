@@ -10,6 +10,7 @@ import QtQuick.Layouts 1.3
 import QtQuick.Controls 2.2 as QQC2
 import Lomiri.Components 1.3
 import "../components"
+import "../js/SettingsUtils.js" as SettingsUtils
 
 Page {
     id: settingsPage
@@ -63,11 +64,7 @@ Page {
     property string engineError: ""
     
     onSelectedModelChanged: {
-        var info = getModelInfo(selectedModel)
-        var limit = info ? info.maxContext : 2048
-        if (maxTokens > limit) {
-            maxTokens = limit
-        }
+        maxTokens = SettingsUtils.maxTokensForModel(root.modelCatalog, selectedModel, maxTokens, 2048)
     }
 
     property real temperature: 0.7
@@ -111,116 +108,15 @@ Page {
     }
 
     function snapTemperature(value) {
-        return Math.round(value * 10) / 10
+        return SettingsUtils.snapTemperature(value)
     }
 
     function snapMaxTokens(value) {
-        if (value <= 200) {
-            return Math.round(value / 10) * 10
-        } else if (value <= 1000) {
-            return Math.round(value / 50) * 50
-        } else if (value <= 10000) {
-            return Math.round(value / 500) * 500
-        } else {
-            return Math.round(value / 5000) * 5000
-        }
+        return SettingsUtils.snapMaxTokens(value)
     }
 
     function getModelInfo(filename) {
-        if (!filename) return null;
-        var fn = filename.toLowerCase();
-        
-        // Search in root.modelCatalog first
-        if (root.modelCatalog) {
-            for (var i = 0; i < root.modelCatalog.length; i++) {
-                var item = root.modelCatalog[i];
-                if (item.filename && item.filename.toLowerCase() === fn) {
-                    return item;
-                }
-            }
-        }
-        
-        // Fallback for custom or legacy filenames
-        if (fn.indexOf("smollm2") >= 0) {
-            return {
-                name: "SmolLM2-1.7B",
-                developer: "Hugging Face",
-                size: "~1.0 GB",
-                context: "8,192 tokens",
-                maxContext: 8192,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Fast general chat, low resource devices"
-            };
-        } else if (fn.indexOf("qwen") >= 0) {
-            return {
-                name: "Qwen2.5-1.5B",
-                developer: "Alibaba Group",
-                size: "~1.0 GB",
-                context: "32,768 tokens",
-                maxContext: 32768,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Excellent multilingual capabilities, coding & reasoning"
-            };
-        } else if (fn.indexOf("llama-3.2-1b") >= 0) {
-            return {
-                name: "Llama-3.2-1B",
-                developer: "Meta",
-                size: "~800 MB",
-                context: "128,000 tokens",
-                maxContext: 128000,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Ultra-fast assistant, agentic tasks, long contexts"
-            };
-        } else if (fn.indexOf("llama-3.2-3b") >= 0) {
-            return {
-                name: "Llama-3.2-3B",
-                developer: "Meta",
-                size: "~2.0 GB",
-                context: "128,000 tokens",
-                maxContext: 128000,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Smart general assistant, high quality logic & reasoning"
-            };
-        } else if (fn.indexOf("gemma") >= 0) {
-            return {
-                name: "Gemma-2-2B",
-                developer: "Google",
-                size: "~1.7 GB",
-                context: "8,192 tokens",
-                maxContext: 8192,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Lightweight high-quality chatting, instruction following"
-            };
-        } else if (fn.indexOf("phi-3") >= 0) {
-            return {
-                name: "Phi-3-mini-4K",
-                developer: "Microsoft",
-                size: "~2.2 GB",
-                context: "4,096 tokens",
-                maxContext: 4096,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Reasoning, logical tasks, math and coding"
-            };
-        } else if (fn.indexOf("tinyllama") >= 0) {
-            return {
-                name: "TinyLlama-1.1B",
-                developer: "TinyLlama Project",
-                size: "~700 MB",
-                context: "2,048 tokens",
-                maxContext: 2048,
-                quant: "Q4_K_M (4-bit)",
-                usage: "Extremely fast, simple chats on low-spec hardware"
-            };
-        }
-        return {
-            name: filename,
-            developer: "Unknown",
-            size: "Unknown",
-            context: "Unknown",
-            maxContext: 2048,
-            quant: "GGUF",
-            usage: "General inference"
-        };
+        return SettingsUtils.getModelInfo(root.modelCatalog, filename)
     }
 
     onBackendReadyChanged: {
