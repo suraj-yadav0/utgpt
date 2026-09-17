@@ -2096,6 +2096,10 @@ def retrieve_document_context(query, session_id=None, limit=6):
         return ""
 
     selected_chunks = []
+    try:
+        per_doc_fetch = max(int(limit), 1)
+    except Exception:
+        per_doc_fetch = 6
     for d_id, fname, c_count in doc_rows:
         ext = os.path.splitext(fname)[1].lower()
         is_img = ext in IMAGE_EXTENSIONS
@@ -2104,8 +2108,12 @@ def retrieve_document_context(query, session_id=None, limit=6):
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE dc.document_id = ?
+              AND TRIM(COALESCE(dc.content, '')) <> ''
+              AND dc.content NOT LIKE '[Image attached:%'
+              AND dc.content NOT LIKE '[PDF Document attached]%'
             ORDER BY dc.chunk_index ASC
-        """, (d_id,))
+            LIMIT ?
+        """, (d_id, per_doc_fetch))
         chunks_for_doc = cursor.fetchall()
         for row in chunks_for_doc:
             content = (row[2] or "").strip()
@@ -2316,6 +2324,25 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
 
     return prompt, boundary
 
+
+def effective_ctx_size(ctx_size, metadata=None, default=2048, floor=512):
+    """
+    Clamp the requested -c context to what the model actually supports.
+    The UI ctx selector goes to 8192 while e.g. TinyLlama caps at 2048;
+    oversized -c wastes RAM and slows attention on phone CPUs.
+    """
+    model_max = default
+    try:
+        if metadata and metadata.get("maxContext"):
+            model_max = int(metadata["maxContext"])
+    except Exception:
+        pass
+    try:
+        return max(floor, min(int(ctx_size), model_max))
+    except Exception:
+        return default
+
+
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     # session_id is optional and comes right before the two callbacks:
     # [..., web_search_enabled, (session_id,) token_callback, done_callback]
@@ -2495,10 +2522,12 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             elif template_type == "default":
                 stop_tokens = ["\nUser:", "\nAssistant:", "\nSystem:"]
 
+            effective_ctx = effective_ctx_size(ctx_size, metadata)
+
             additional_args = [
                 "-t", str(int(threads)),
                 "-tb", str(int(threads)),
-                "-c", str(int(ctx_size)),
+                "-c", str(effective_ctx),
                 "-fa", str(flash_attn)
             ]
             if kv_cache in ["q8_0", "q4_0"]:
@@ -2563,6 +2592,23 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             output_buffer = ""
             has_emitted_content = False
+            # Batch per-char reads into ~word-sized bridge events. One
+            # PyOtherSide event per character stalls both the backend thread
+            # and QML (Markdown re-parse + relayout per event).
+            emit_batch = ""
+            emit_batch_target = 24
+
+            def flush_emit(force=False):
+                nonlocal emit_batch
+                if emit_batch and (force or len(emit_batch) >= emit_batch_target):
+                    _emit_token(token_callback, emit_batch)
+                    emit_batch = ""
+
+            def queue_emit(text):
+                nonlocal emit_batch
+                if text:
+                    emit_batch += text
+                    flush_emit()
 
             if "deepseek-r1" in model_filename.lower():
                 _emit_token(token_callback, "<think>\n")
@@ -2585,8 +2631,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                                 continue
                             else:
                                 has_emitted_content = True
-                        _emit_token(token_callback, emit_char)
+                        queue_emit(emit_char)
                 
+                flush_emit(force=True)
                 if output_buffer:
                     if not has_emitted_content:
                         output_buffer = output_buffer.lstrip()
@@ -2594,7 +2641,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     output_buffer = output_buffer.replace(" [end of text]", "").replace("[end of text]", "")
                     if output_buffer:
                         log_debug("Emitting remaining completion buffer: {0}".format(repr(output_buffer)))
-                        _emit_token(token_callback, output_buffer)
+                        queue_emit(output_buffer)
+                        flush_emit(force=True)
             else:
                 log_debug("Using legacy cli boundary detection stdout read loop")
                 started = False
@@ -2635,18 +2683,20 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                                 continue
                             else:
                                 has_emitted_content = True
-                        _emit_token(token_callback, emit_char)
+                        queue_emit(emit_char)
 
                 if not started and "Loading model" not in output_buffer:
                     started = True
 
+                flush_emit(force=True)
                 if started and output_buffer:
                     remaining = output_buffer.split("[ Prompt:")[0]
                     if not has_emitted_content:
                         remaining = remaining.lstrip()
                     if remaining:
                         log_debug("Emitting remaining buffer content: {0}".format(repr(remaining)))
-                        _emit_token(token_callback, remaining)
+                        queue_emit(remaining)
+                        flush_emit(force=True)
 
             log_debug("Waiting for process to exit")
             exit_code = process.wait()

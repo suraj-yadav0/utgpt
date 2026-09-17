@@ -60,7 +60,7 @@ MainView {
         property int threads: 4
         property int ctxSize: 2048
         property string flashAttn: "auto"
-        property string kvCache: "f16"
+        property string kvCache: "q8_0"
         property string themeMode: "system"
         property bool webSearchEnabled: false
         property string lastSeenVersion: ""

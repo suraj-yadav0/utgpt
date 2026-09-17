@@ -48,11 +48,12 @@ Page {
     property int threads: 4
     property int ctxSize: 2048
     property string flashAttn: "auto"
-    property string kvCache: "f16"
+    property string kvCache: "q8_0"
     property bool webSearchEnabled: false
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
+    property bool webSearchActive: false
 
     ListModel {
         id: attachedDocsModel
