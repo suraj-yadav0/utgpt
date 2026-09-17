@@ -4,18 +4,22 @@
 // Kept UI-free so it can run under qmltestrunner (QtTest).
 
 function isThinkingPlaceholder(text) {
-    return text === "..." || text === "Thinking" ||
-        (typeof text === "string" && text.indexOf("Thinking") === 0);
+    if (text === "..." || text === "Thinking") {
+        return true;
+    }
+    // Animated states from the thinking timer: "Thinking.", "Thinking..", "Thinking..."
+    // Anything else starting with "Thinking" (e.g. formatted reasoning
+    // "*Thinking Process:*") is real content, not a placeholder.
+    return typeof text === "string" && /^Thinking\.{1,3}$/.test(text);
 }
 
 function isSaveableAssistantText(text) {
-    return text !== "Thinking" && text !== "..." &&
-        !(typeof text === "string" && text.indexOf("Thinking") === 0);
+    return !isThinkingPlaceholder(text);
 }
 
 function formatAssistantText(currentText, chunk) {
     var base = currentText;
-    if (base === "..." || (typeof base === "string" && base.indexOf("Thinking") === 0)) {
+    if (isThinkingPlaceholder(base)) {
         base = "";
     }
     var newText = base + chunk;
