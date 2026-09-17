@@ -308,6 +308,7 @@ Page {
         isResponding = false
         pendingRequestId = ""
         userStopped = false
+        webSearchActive = false
     }
 
     function startNewChat() {
@@ -316,6 +317,7 @@ Page {
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
+        webSearchActive = false
     }
 
     function clearHistory() {
@@ -324,6 +326,7 @@ Page {
         composer.text = ""
         isResponding = false
         pendingRequestId = ""
+        webSearchActive = false
         python.call("backend.clear_chat_history", [], function() {
             root.currentSessionId = null
             root.refreshSessions()
@@ -505,7 +508,10 @@ Page {
 
             if (data.event === "inference_token") {
                 chatPage.appendAssistantText(data.payload.text)
+            } else if (data.event === "web_search_status") {
+                chatPage.webSearchActive = (data.payload.phase === "started")
             } else if (data.event === "inference_done") {
+                chatPage.webSearchActive = false
                 chatPage.finishResponse(data.payload.ok, data.payload.error)
                 pendingRequestId = ""
             }
@@ -893,6 +899,42 @@ Page {
                     if (docPickerLoader.item) {
                         docPickerLoader.item.open()
                     }
+                }
+            }
+        }
+
+        // Transient web-search status pill (never saved to chat history)
+        Rectangle {
+            id: webSearchStatus
+            Layout.fillWidth: true
+            Layout.preferredHeight: units.gu(4)
+            visible: chatPage.webSearchActive
+            color: root.isDark ? "#1E2D2A" : "#E6FFFA"
+            border.color: "#319795"
+            border.width: 1
+            radius: units.gu(1)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: units.gu(1.5)
+                anchors.rightMargin: units.gu(1.5)
+                spacing: units.gu(1)
+
+                ActivityIndicator {
+                    running: webSearchStatus.visible
+                    width: units.gu(2)
+                    height: units.gu(2)
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Label {
+                    text: i18n.tr("Searching the web for latest info...")
+                    color: "#319795"
+                    fontSize: "small"
+                    font.italic: true
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    elide: Text.ElideRight
                 }
             }
         }

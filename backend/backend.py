@@ -79,11 +79,25 @@ class DDGLiteParser(HTMLParser):
             self.accumulated_text.append(data)
 
 
+WEB_SEARCH_CACHE = {}
+WEB_SEARCH_CACHE_TTL = 1800.0
+WEB_SEARCH_TIMEOUT = 8
+
+
 def search_web(query, num_results=3):
     """
     Performs a privacy-focused DuckDuckGo Lite search using standard Python libraries,
     returning structured web titles, snippets, and URLs.
+
+    Results are cached in memory (30 min TTL) so repeat questions answer instantly
+    instead of paying DNS + TLS + DuckDuckGo latency on every request.
     """
+    cache_key = (query or "").strip().lower()
+    now = time.time()
+    cached = WEB_SEARCH_CACHE.get(cache_key)
+    if cached and now - cached[0] < WEB_SEARCH_CACHE_TTL:
+        return [dict(item) for item in cached[1][:num_results]]
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -91,11 +105,15 @@ def search_web(query, num_results=3):
     data = urllib.parse.urlencode({"q": query}).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers)
     try:
-        with _urlopen(req, timeout=10) as response:
+        with _urlopen(req, timeout=WEB_SEARCH_TIMEOUT) as response:
             html = response.read().decode("utf-8", errors="ignore")
             parser = DDGLiteParser()
             parser.feed(html)
-            return parser.results[:num_results]
+            results = parser.results[:num_results]
+            if len(WEB_SEARCH_CACHE) > 200:
+                WEB_SEARCH_CACHE.clear()
+            WEB_SEARCH_CACHE[cache_key] = (now, results)
+            return [dict(item) for item in results]
     except Exception as e:
         log_error("Web search failed for query '{0}': {1}".format(query, e))
         return []
@@ -527,6 +545,15 @@ def _emit_token(callback_ref, text):
         _send_event("inference_token", {
             "requestId": str(callback_ref),
             "text": text
+        })
+
+
+def _emit_search_status(callback_ref, phase):
+    # Transient UI status only (never part of the chat text).
+    if callback_ref and not callable(callback_ref):
+        _send_event("web_search_status", {
+            "requestId": str(callback_ref),
+            "phase": phase
         })
 
 
@@ -2404,18 +2431,21 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             web_context_msgs = []
             if web_search_enabled:
                 log_info("Performing web search for query: {0}".format(current_query))
-                _emit_token(token_callback, "*Searching the web for latest info...*\n\n")
-                search_results = search_web(current_query, num_results=3)
-                if search_results:
-                    formatted_web = "Web Search Results (Current Real-time Info):\n"
-                    for idx, res in enumerate(search_results, 1):
-                        title = res.get('title', '')
-                        snippet = res.get('snippet', '')
-                        url = res.get('url', '')
-                        formatted_web += f"{idx}. Title: {title}\n   Snippet: {snippet}\n   Source: {url}\n"
-                    web_context_msgs = [{"role": "system", "text": formatted_web}]
-                else:
-                    _emit_token(token_callback, "*Web search returned no results, relying on model knowledge...*\n\n")
+                _emit_search_status(token_callback, "started")
+                try:
+                    search_results = search_web(current_query, num_results=3)
+                    if search_results:
+                        formatted_web = "Web Search Results (Current Real-time Info):\n"
+                        for idx, res in enumerate(search_results, 1):
+                            title = res.get('title', '')
+                            snippet = res.get('snippet', '')
+                            url = res.get('url', '')
+                            formatted_web += f"{idx}. Title: {title}\n   Snippet: {snippet}\n   Source: {url}\n"
+                        web_context_msgs = [{"role": "system", "text": formatted_web}]
+                    else:
+                        log_info("Web search returned no results, relying on model knowledge.")
+                finally:
+                    _emit_search_status(token_callback, "finished")
 
             exclude_texts = {current_query}
             for msg in recent_history:
