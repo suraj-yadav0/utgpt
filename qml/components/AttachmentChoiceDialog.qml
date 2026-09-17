@@ -17,194 +17,137 @@ Dialog {
     signal galleryRequested()
     signal docPickerRequested()
 
+    function choose(action) {
+        PopupUtils.close(dialog)
+        if (action === "camera") {
+            dialog.cameraRequested()
+        } else if (action === "gallery") {
+            dialog.galleryRequested()
+        } else {
+            dialog.docPickerRequested()
+        }
+    }
+
     ColumnLayout {
         width: parent ? parent.width : units.gu(38)
-        spacing: units.gu(1.2)
+        spacing: units.gu(1)
 
-        // Option 1: Take Photo with Camera
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: units.gu(6.8)
-            radius: units.gu(1)
-            color: root.isDark ? "#262626" : "#F8FAFC"
-            border.color: root.themeColor
-            border.width: 1
+        Repeater {
+            model: [
+                {
+                    icon: "camera-app",
+                    title: i18n.tr("Take Photo"),
+                    sub: i18n.tr("Capture a new photo and extract text via OCR"),
+                    action: "camera"
+                },
+                {
+                    icon: "stock_image",
+                    title: i18n.tr("Pick from Gallery"),
+                    sub: i18n.tr("Choose an image to translate or extract text"),
+                    action: "gallery"
+                },
+                {
+                    icon: "document-open",
+                    title: i18n.tr("Attach Document"),
+                    sub: i18n.tr("Index PDF, TXT, MD, CSV, or code files for search"),
+                    action: "document"
+                }
+            ]
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: units.gu(1)
-                spacing: units.gu(1.2)
+            delegate: Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.max(units.gu(7.2), optionRow.implicitHeight + units.gu(2.2))
+                radius: units.gu(1.2)
+                color: rowMouse.pressed ? root.themeBgLight : root.cardColor
+                border.color: rowMouse.pressed || rowMouse.containsMouse ? root.themeTextColor : root.cardBorderColor
+                border.width: 1
 
-                Rectangle {
-                    width: units.gu(4.2)
-                    height: units.gu(4.2)
-                    radius: units.gu(0.8)
-                    color: root.themeBgLight
+                Behavior on color { ColorAnimation { duration: 120 } }
+
+                RowLayout {
+                    id: optionRow
+                    anchors.fill: parent
+                    anchors.margins: units.gu(1.2)
+                    spacing: units.gu(1.2)
+
+                    Rectangle {
+                        width: units.gu(4.4)
+                        height: units.gu(4.4)
+                        radius: units.gu(1)
+                        color: root.themeBgLight
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Icon {
+                            anchors.centerIn: parent
+                            name: modelData.icon
+                            width: units.gu(2.4)
+                            height: units.gu(2.4)
+                            color: root.themeTextColor
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: units.gu(0.3)
+
+                        Label {
+                            text: modelData.title
+                            font.bold: true
+                            color: root.primaryTextColor
+                            fontSize: "small"
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: modelData.sub
+                            color: root.secondaryTextColor
+                            fontSize: "x-small"
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
 
                     Icon {
-                        anchors.centerIn: parent
-                        name: "camera-app"
-                        width: units.gu(2.4)
-                        height: units.gu(2.4)
-                        color: root.themeTextColor
+                        name: "next"
+                        width: units.gu(1.8)
+                        height: units.gu(1.8)
+                        color: root.tertiaryTextColor
+                        Layout.alignment: Qt.AlignVCenter
                     }
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: units.gu(0.2)
-
-                    Label {
-                        text: i18n.tr("Take Photo (Camera)")
-                        font.bold: true
-                        color: root.primaryTextColor
-                        fontSize: "small"
-                    }
-
-                    Label {
-                        text: i18n.tr("Capture a new photo and extract text via OCR")
-                        color: root.secondaryTextColor
-                        fontSize: "x-small"
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    PopupUtils.close(dialog)
-                    dialog.cameraRequested()
+                MouseArea {
+                    id: rowMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: dialog.choose(modelData.action)
                 }
             }
         }
 
-        // Option 2: Pick from Gallery
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: units.gu(6.8)
-            radius: units.gu(1)
-            color: root.isDark ? "#262626" : "#F8FAFC"
-            border.color: root.themeColor
-            border.width: 1
+            Layout.preferredHeight: units.gu(4.5)
+            radius: units.gu(1.2)
+            color: cancelMouse.pressed ? root.themeBgLight : "transparent"
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: units.gu(1)
-                spacing: units.gu(1.2)
-
-                Rectangle {
-                    width: units.gu(4.2)
-                    height: units.gu(4.2)
-                    radius: units.gu(0.8)
-                    color: root.themeBgLight
-
-                    Icon {
-                        anchors.centerIn: parent
-                        name: "image"
-                        width: units.gu(2.4)
-                        height: units.gu(2.4)
-                        color: root.themeTextColor
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: units.gu(0.2)
-
-                    Label {
-                        text: i18n.tr("Pick from Gallery")
-                        font.bold: true
-                        color: root.primaryTextColor
-                        fontSize: "small"
-                    }
-
-                    Label {
-                        text: i18n.tr("Choose an image to translate or extract text")
-                        color: root.secondaryTextColor
-                        fontSize: "x-small"
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                }
+            Label {
+                anchors.centerIn: parent
+                text: i18n.tr("Cancel")
+                color: root.secondaryTextColor
+                fontSize: "small"
             }
 
             MouseArea {
+                id: cancelMouse
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    PopupUtils.close(dialog)
-                    dialog.galleryRequested()
-                }
+                onClicked: PopupUtils.close(dialog)
             }
-        }
-
-        // Option 3: Document RAG
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: units.gu(6.8)
-            radius: units.gu(1)
-            color: root.isDark ? "#262626" : "#F8FAFC"
-            border.color: root.cardBorderColor
-            border.width: 1
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: units.gu(1)
-                spacing: units.gu(1.2)
-
-                Rectangle {
-                    width: units.gu(4.2)
-                    height: units.gu(4.2)
-                    radius: units.gu(0.8)
-                    color: root.isDark ? "#333333" : "#E2E8F0"
-
-                    Icon {
-                        anchors.centerIn: parent
-                        name: "document"
-                        width: units.gu(2.4)
-                        height: units.gu(2.4)
-                        color: root.primaryTextColor
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: units.gu(0.2)
-
-                    Label {
-                        text: i18n.tr("Attach Document")
-                        font.bold: true
-                        color: root.primaryTextColor
-                        fontSize: "small"
-                    }
-
-                    Label {
-                        text: i18n.tr("Index PDF, TXT, MD, CSV, or code files for RAG search")
-                        color: root.secondaryTextColor
-                        fontSize: "x-small"
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    PopupUtils.close(dialog)
-                    dialog.docPickerRequested()
-                }
-            }
-        }
-
-        Button {
-            Layout.fillWidth: true
-            text: i18n.tr("Cancel")
-            onClicked: PopupUtils.close(dialog)
         }
     }
 }
