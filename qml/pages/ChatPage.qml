@@ -652,7 +652,7 @@ Page {
                             spacing: units.gu(0.5)
 
                             Icon {
-                                name: "stock_internet"
+                                name: "stock_website"
                                 width: units.gu(1.8)
                                 height: units.gu(1.8)
                                 color: chatPage.webSearchEnabled ? "#319795" : root.secondaryTextColor

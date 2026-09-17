@@ -178,7 +178,7 @@ Page {
                     ListElement { title: "Generation Settings"; icon: "settings"; section: "generation" }
                     ListElement { title: "Performance Settings"; icon: "reload"; section: "performance" }
                     ListElement { title: "Theme"; icon: "preferences-desktop-display-symbolic"; section: "theme" }
-                    ListElement { title: "Web Search"; icon: "stock_internet"; section: "websearch" }
+                    ListElement { title: "Web Search"; icon: "stock_website"; section: "websearch" }
                     ListElement { title: "Storage & History"; icon: "delete"; section: "storage" }
                     ListElement { title: "What's New & Release Notes"; icon: "info"; section: "releasenotes" }
                 }
