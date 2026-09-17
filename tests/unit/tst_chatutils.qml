@@ -77,4 +77,11 @@ TestCase {
         compare(ChatUtils.fallbackResponseText(false, "boom"), "boom")
         compare(ChatUtils.fallbackResponseText(false, ""), "The model stopped unexpectedly.")
     }
+
+    function test_attachmentActions() {
+        compare(ChatUtils.attachmentActions(false, false), [])
+        compare(ChatUtils.attachmentActions(true, false), ["camera", "gallery"])
+        compare(ChatUtils.attachmentActions(false, true), ["document"])
+        compare(ChatUtils.attachmentActions(true, true), ["camera", "gallery", "document"])
+    }
 }

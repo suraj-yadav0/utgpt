@@ -50,6 +50,8 @@ Page {
     property string flashAttn: "auto"
     property string kvCache: "q8_0"
     property bool webSearchEnabled: false
+    property bool attachImagesEnabled: false
+    property bool attachDocsEnabled: false
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
@@ -886,6 +888,8 @@ Page {
         Component {
             id: attachmentChoiceDialogComponent
             AttachmentChoiceDialog {
+                imagesEnabled: chatPage.attachImagesEnabled
+                docsEnabled: chatPage.attachDocsEnabled
                 onCameraRequested: {
                     if (picturePickerLoader.item) {
                         picturePickerLoader.item.openCamera()
@@ -1046,6 +1050,7 @@ Page {
                     Layout.alignment: Qt.AlignVCenter
                     color: root.isDark ? "#2D2D2D" : "#E2E8F0"
                     enabled: !chatPage.isResponding
+                    visible: chatPage.attachImagesEnabled || chatPage.attachDocsEnabled
 
                     Icon {
                         anchors.centerIn: parent

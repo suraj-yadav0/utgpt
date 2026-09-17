@@ -8,6 +8,7 @@ import QtQuick 2.7
 import QtQuick.Layouts 1.3
 import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
+import "../js/ChatUtils.js" as ChatUtils
 
 Dialog {
     id: dialog
@@ -16,6 +17,10 @@ Dialog {
     signal cameraRequested()
     signal galleryRequested()
     signal docPickerRequested()
+
+    // Experimental gates, bound by ChatPage. Hidden options are not offered.
+    property bool imagesEnabled: true
+    property bool docsEnabled: true
 
     function choose(action) {
         PopupUtils.close(dialog)
@@ -28,31 +33,39 @@ Dialog {
         }
     }
 
+    function buildModel() {
+        var defs = {
+            "camera": {
+                icon: "camera-app",
+                title: i18n.tr("Take Photo"),
+                sub: i18n.tr("Capture a new photo and extract text via OCR")
+            },
+            "gallery": {
+                icon: "stock_image",
+                title: i18n.tr("Pick from Gallery"),
+                sub: i18n.tr("Choose an image to translate or extract text")
+            },
+            "document": {
+                icon: "document-open",
+                title: i18n.tr("Attach Document"),
+                sub: i18n.tr("Index PDF, TXT, MD, CSV, or code files for search")
+            }
+        };
+        var actions = ChatUtils.attachmentActions(imagesEnabled, docsEnabled);
+        var out = [];
+        for (var i = 0; i < actions.length; i++) {
+            var d = defs[actions[i]];
+            out.push({ icon: d.icon, title: d.title, sub: d.sub, action: actions[i] });
+        }
+        return out;
+    }
+
     ColumnLayout {
         width: parent ? parent.width : units.gu(38)
         spacing: units.gu(1)
 
         Repeater {
-            model: [
-                {
-                    icon: "camera-app",
-                    title: i18n.tr("Take Photo"),
-                    sub: i18n.tr("Capture a new photo and extract text via OCR"),
-                    action: "camera"
-                },
-                {
-                    icon: "stock_image",
-                    title: i18n.tr("Pick from Gallery"),
-                    sub: i18n.tr("Choose an image to translate or extract text"),
-                    action: "gallery"
-                },
-                {
-                    icon: "document-open",
-                    title: i18n.tr("Attach Document"),
-                    sub: i18n.tr("Index PDF, TXT, MD, CSV, or code files for search"),
-                    action: "document"
-                }
-            ]
+            model: buildModel()
 
             delegate: Rectangle {
                 Layout.fillWidth: true

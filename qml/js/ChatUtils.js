@@ -80,3 +80,17 @@ function fallbackResponseText(userStopped, errorMessage) {
     }
     return "The model stopped unexpectedly.";
 }
+
+// Experimental attachment gates. Returns the dialog actions to offer:
+// "camera"/"gallery" need images enabled, "document" needs docs enabled.
+function attachmentActions(imagesEnabled, docsEnabled) {
+    var actions = [];
+    if (imagesEnabled) {
+        actions.push("camera");
+        actions.push("gallery");
+    }
+    if (docsEnabled) {
+        actions.push("document");
+    }
+    return actions;
+}

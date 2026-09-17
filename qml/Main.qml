@@ -63,6 +63,8 @@ MainView {
         property string kvCache: "q8_0"
         property string themeMode: "system"
         property bool webSearchEnabled: false
+        property bool experimentalImages: false
+        property bool experimentalDocs: false
         property string lastSeenVersion: ""
     }
 
@@ -81,6 +83,8 @@ MainView {
     property string kvCache: appSettings.kvCache
     property string themeMode: appSettings.themeMode || "system"
     property bool webSearchEnabled: appSettings.webSearchEnabled
+    property bool experimentalImages: appSettings.experimentalImages
+    property bool experimentalDocs: appSettings.experimentalDocs
     property string systemThemeName: ""
     property bool sidebarOpen: false
     property var modelCatalog: []
@@ -98,6 +102,8 @@ MainView {
     onFlashAttnChanged: appSettings.flashAttn = flashAttn
     onKvCacheChanged: appSettings.kvCache = kvCache
     onWebSearchEnabledChanged: appSettings.webSearchEnabled = webSearchEnabled
+    onExperimentalImagesChanged: appSettings.experimentalImages = experimentalImages
+    onExperimentalDocsChanged: appSettings.experimentalDocs = experimentalDocs
     onThemeModeChanged: {
         appSettings.themeMode = themeMode
         updateTheme()
@@ -393,6 +399,8 @@ MainView {
                 kvCache: root.kvCache
                 webSearchEnabled: root.webSearchEnabled
                 onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
+                attachImagesEnabled: root.experimentalImages
+                attachDocsEnabled: root.experimentalDocs
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
@@ -420,6 +428,8 @@ MainView {
                 kvCache: root.kvCache
                 themeMode: root.themeMode
                 webSearchEnabled: root.webSearchEnabled
+                experimentalImages: root.experimentalImages
+                experimentalDocs: root.experimentalDocs
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
@@ -429,6 +439,8 @@ MainView {
                 onKvCacheChanged: root.kvCache = kvCache
                 onThemeModeChanged: root.themeMode = themeMode
                 onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
+                onExperimentalImagesChanged: root.experimentalImages = experimentalImages
+                onExperimentalDocsChanged: root.experimentalDocs = experimentalDocs
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
                 onShowReleaseNotes: root.showReleaseNotes()
