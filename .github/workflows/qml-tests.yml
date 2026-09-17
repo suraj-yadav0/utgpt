@@ -16,7 +16,7 @@ jobs:
       - name: Install UT QML test packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y qtdeclarative5-dev-tools qml-module-qttest
+          sudo apt-get install -y qtdeclarative5-dev-tools qml-module-qttest python3-pytest
 
       - name: Run QML unit tests
         run: |
@@ -24,3 +24,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_SELECT: qt5
+
+      - name: Run Python backend tests
+        run: |
+          python3 -m pytest tests/python -q
