@@ -2,6 +2,14 @@
 
 An offline AI chat application built specifically for Ubuntu Touch, allowing users to run lightweight Large Language Models (LLMs) directly on their mobile device.
 
+<p align="center">
+  <a href="brag-output/brag.mp4">
+    <img src="brag-output/brag.jpg" alt="UTGPT Launch Video" width="800">
+  </a>
+  <br>
+  <em>Watch the <a href="brag-output/brag.mp4">UTGPT Launch Video</a> (20s on-device overview)</em>
+</p>
+
 ## Features
 
 - Local Model Manager: Download and manage lightweight GGUF models (such as Qwen2.5, TinyLlama, and SmolLM2) directly in the application.

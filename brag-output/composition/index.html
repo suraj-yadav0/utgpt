@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>UTGPT - On-Device AI for Ubuntu Touch</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: 'Ubuntu';
+        src: local('Ubuntu');
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #121212;
+        color: #f8fafc;
+        font-family: "Ubuntu", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+        background: radial-gradient(circle at 50% 30%, #3d141c 0%, #1a080c 45%, #121212 90%);
+      }
+
+      /* Subtle grid background */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(rgba(255, 128, 147, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 128, 147, 0.05) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.7;
+        pointer-events: none;
+      }
+
+      /* Base clip full frame */
+      .clip {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* UI Tokens */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 18px;
+        border-radius: 9999px;
+        background: rgba(92, 10, 26, 0.6);
+        border: 1px solid rgba(255, 128, 147, 0.4);
+        color: #ff8093;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      /* Scene 1: Hook */
+      .scene-hook {
+        flex-direction: column;
+        text-align: center;
+        gap: 28px;
+        max-width: 1280px;
+        padding: 0 40px;
+      }
+      .hook-title {
+        font-size: 72px;
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+        color: #f8fafc;
+      }
+      .hook-subtitle {
+        font-size: 32px;
+        color: #cbd5e1;
+        font-weight: 400;
+      }
+
+      /* Scene 2: Models */
+      .scene-models {
+        flex-direction: column;
+        align-items: center;
+        gap: 48px;
+        width: 100%;
+        max-width: 1400px;
+      }
+      .scene-heading {
+        font-size: 48px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #f8fafc;
+        text-align: center;
+      }
+      .model-grid {
+        display: flex;
+        gap: 32px;
+        width: 100%;
+        justify-content: center;
+      }
+      .model-card {
+        flex: 1;
+        max-width: 400px;
+        background: #1e1e1e;
+        border: 2px solid #2d2d2d;
+        border-radius: 20px;
+        padding: 36px 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      }
+      .model-card.active {
+        border-color: #ff8093;
+        background: linear-gradient(180deg, #2a151b 0%, #1e1e1e 100%);
+      }
+      .model-name {
+        font-size: 28px;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+      .model-tag {
+        font-size: 15px;
+        color: #ff8093;
+        font-weight: 600;
+      }
+      .model-desc {
+        font-size: 18px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+      .status-pill {
+        margin-top: auto;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        align-self: flex-start;
+      }
+      .status-active {
+        background: rgba(34, 197, 94, 0.2);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.4);
+      }
+      .status-ready {
+        background: rgba(148, 163, 184, 0.15);
+        color: #94a3b8;
+      }
+
+      /* Scene 3: Hardware Tuning */
+      .scene-hardware {
+        flex-direction: column;
+        align-items: center;
+        gap: 40px;
+        max-width: 1100px;
+        width: 100%;
+      }
+      .settings-card {
+        width: 100%;
+        background: #1e1e1e;
+        border: 2px solid #2d2d2d;
+        border-radius: 24px;
+        padding: 44px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+      }
+      .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 32px;
+      }
+      .setting-info {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .setting-label {
+        font-size: 24px;
+        font-weight: 600;
+        color: #f8fafc;
+      }
+      .setting-sub {
+        font-size: 16px;
+        color: #94a3b8;
+      }
+      .slider-track {
+        width: 320px;
+        height: 10px;
+        background: #2d2d2d;
+        border-radius: 9999px;
+        position: relative;
+        overflow: hidden;
+      }
+      .slider-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #5c0a1a 0%, #ff8093 100%);
+        border-radius: 9999px;
+      }
+      .setting-val {
+        font-size: 22px;
+        font-weight: 700;
+        color: #ff8093;
+        min-width: 120px;
+        text-align: right;
+      }
+      .toggle-switch {
+        width: 68px;
+        height: 38px;
+        background: #22c55e;
+        border-radius: 9999px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        padding: 4px;
+      }
+      .toggle-knob {
+        width: 30px;
+        height: 30px;
+        background: #ffffff;
+        border-radius: 50%;
+        margin-left: auto;
+      }
+
+      /* Scene 4: Chat */
+      .scene-chat {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+      }
+      .phone-mockup {
+        width: 540px;
+        height: 860px;
+        background: #181818;
+        border: 4px solid #333333;
+        border-radius: 44px;
+        padding: 24px 28px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.7);
+        position: relative;
+      }
+      .phone-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #2d2d2d;
+        margin-bottom: 24px;
+      }
+      .phone-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+      .phone-model-badge {
+        font-size: 13px;
+        padding: 4px 10px;
+        background: #3d141c;
+        color: #ff8093;
+        border-radius: 6px;
+        font-weight: 600;
+      }
+      .chat-stream {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        flex: 1;
+      }
+      .chat-bubble {
+        padding: 18px 22px;
+        border-radius: 18px;
+        font-size: 18px;
+        line-height: 1.45;
+        max-width: 90%;
+      }
+      .user-bubble {
+        background: #5c0a1a;
+        color: #f8fafc;
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+      }
+      .assistant-bubble {
+        background: #242424;
+        color: #f8fafc;
+        align-self: flex-start;
+        border: 1px solid #333333;
+        border-bottom-left-radius: 4px;
+      }
+      .thinking-dots {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        background: #ff8093;
+        border-radius: 50%;
+      }
+
+      /* Scene 5: Outro */
+      .scene-outro {
+        flex-direction: column;
+        align-items: center;
+        gap: 32px;
+        text-align: center;
+      }
+      .outro-logo {
+        width: 140px;
+        height: 140px;
+        border-radius: 32px;
+        box-shadow: 0 16px 40px rgba(92, 10, 26, 0.6);
+      }
+      .outro-title {
+        font-size: 76px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        color: #f8fafc;
+      }
+      .outro-sub {
+        font-size: 28px;
+        color: #cbd5e1;
+        max-width: 900px;
+        line-height: 1.4;
+      }
+      .outro-repo {
+        font-family: monospace;
+        font-size: 20px;
+        color: #ff8093;
+        padding: 10px 24px;
+        background: rgba(92, 10, 26, 0.4);
+        border: 1px solid rgba(255, 128, 147, 0.3);
+        border-radius: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div class="bg-grid"></div>
+
+      <!-- AUDIO TRACKS -->
+      <audio
+        id="bg-music"
+        data-start="0"
+        data-duration="20"
+        data-track-index="10"
+        data-volume="0.32"
+        src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"
+      ></audio>
+      <audio
+        id="sfx-drop"
+        data-start="1.2"
+        data-duration="0.11"
+        data-track-index="11"
+        data-volume="0.75"
+        src="assets/sfx/interface/drop_001.ogg"
+      ></audio>
+      <audio
+        id="sfx-select"
+        data-start="5.5"
+        data-duration="0.05"
+        data-track-index="12"
+        data-volume="0.75"
+        src="assets/sfx/interface/select_008.ogg"
+      ></audio>
+      <audio
+        id="sfx-switch"
+        data-start="9.5"
+        data-duration="0.62"
+        data-track-index="13"
+        data-volume="0.75"
+        src="assets/sfx/interface/switch_001.ogg"
+      ></audio>
+      <audio
+        id="sfx-soft"
+        data-start="13.11"
+        data-duration="0.12"
+        data-track-index="14"
+        data-volume="0.70"
+        src="assets/sfx/impact/impactSoft_medium_000.ogg"
+      ></audio>
+      <audio
+        id="sfx-bell"
+        data-start="17.47"
+        data-duration="1.48"
+        data-track-index="15"
+        data-volume="0.80"
+        src="assets/sfx/impact/impactBell_heavy_000.ogg"
+      ></audio>
+
+      <!-- SCENE 1: THE HOOK (0.0s - 3.5s) -->
+      <div id="scene-1" class="clip" data-start="0" data-duration="3.5" data-track-index="1">
+        <div id="s1-content" class="scene-hook">
+          <div id="s1-badge" class="badge">Ubuntu Touch Mobile AI</div>
+          <h1 id="s1-title" class="hook-title">Who said your phone needs the cloud for AI?</h1>
+          <p id="s1-sub" class="hook-subtitle">UTGPT runs Large Language Models natively in your pocket.</p>
+        </div>
+      </div>
+
+      <!-- SCENE 2: LOCAL MODELS (3.5s - 8.0s) -->
+      <div id="scene-2" class="clip" data-start="3.5" data-duration="4.5" data-track-index="2">
+        <div id="s2-content" class="scene-models">
+          <div class="badge">Model Catalog</div>
+          <h2 id="s2-title" class="scene-heading">Switch Lightweight GGUF Models Instantly</h2>
+          <div class="model-grid">
+            <div id="model-card-1" class="model-card active">
+              <span class="model-tag">ACTIVE SELECTION</span>
+              <h3 class="model-name">Qwen 2.5</h3>
+              <p class="model-desc">0.5B / 1.5B parameters. Fast, highly capable reasoning on mobile hardware.</p>
+              <span class="status-pill status-active">Loaded &amp; Ready</span>
+            </div>
+            <div id="model-card-2" class="model-card">
+              <span class="model-tag">LIGHTWEIGHT</span>
+              <h3 class="model-name">SmolLM2</h3>
+              <p class="model-desc">135M / 360M edge model. Instant startup with minimal RAM consumption.</p>
+              <span class="status-pill status-ready">Installed</span>
+            </div>
+            <div id="model-card-3" class="model-card">
+              <span class="model-tag">EFFICIENT</span>
+              <h3 class="model-name">TinyLlama</h3>
+              <p class="model-desc">1.1B quantized architecture. Balanced text generation on mobile CPU.</p>
+              <span class="status-pill status-ready">Installed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 3: HARDWARE TUNING (8.0s - 12.5s) -->
+      <div id="scene-3" class="clip" data-start="8.0" data-duration="4.5" data-track-index="3">
+        <div id="s3-content" class="scene-hardware">
+          <div class="badge">Mobile Performance</div>
+          <h2 id="s3-title" class="scene-heading">Fine-Tuned for Mobile Silicon</h2>
+          <div class="settings-card">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">CPU Threads</span>
+                <span class="setting-sub">Balance inference speed and battery thermals</span>
+              </div>
+              <div class="slider-track">
+                <div id="s3-slider-threads" class="slider-fill" style="width: 50%"></div>
+              </div>
+              <span class="setting-val">4 Threads</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Context Size Limit</span>
+                <span class="setting-sub">Optimized memory window for device RAM</span>
+              </div>
+              <div class="slider-track">
+                <div id="s3-slider-ctx" class="slider-fill" style="width: 65%"></div>
+              </div>
+              <span class="setting-val">2048 Tokens</span>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Flash Attention</span>
+                <span class="setting-sub">Accelerated prompt processing on mobile</span>
+              </div>
+              <div id="s3-toggle" class="toggle-switch">
+                <div class="toggle-knob"></div>
+              </div>
+              <span class="setting-val">Enabled</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 4: REAL-TIME ON-DEVICE CHAT (12.5s - 17.0s) -->
+      <div id="scene-4" class="clip" data-start="12.5" data-duration="4.5" data-track-index="4">
+        <div id="s4-content" class="scene-chat">
+          <div class="phone-mockup">
+            <div class="phone-header">
+              <span class="phone-title">UTGPT</span>
+              <span class="phone-model-badge">Qwen 2.5 • Offline</span>
+            </div>
+            <div class="chat-stream">
+              <div id="chat-user-msg" class="chat-bubble user-bubble">
+                Explain quantum superposition in one sentence.
+              </div>
+              <div id="chat-thinking" class="chat-bubble assistant-bubble">
+                <div class="thinking-dots">
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </div>
+              </div>
+              <div id="chat-assistant-msg" class="chat-bubble assistant-bubble" style="opacity: 0">
+                A system remains in multiple possible states simultaneously until an interaction or observation forces it into one.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE 5: OUTRO (17.0s - 20.0s) -->
+      <div id="scene-5" class="clip" data-start="17.0" data-duration="3.0" data-track-index="5">
+        <div id="s5-content" class="scene-outro">
+          <img src="assets/images/logo.png" alt="UTGPT Logo" class="outro-logo" />
+          <h2 class="outro-title">UTGPT</h2>
+          <p class="outro-sub">Zero Servers. Zero Telemetry. 100% Private On-Device AI.</p>
+          <div class="outro-repo">Built for Ubuntu Touch • Open Source</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      // Scene 1: The Hook (0.0s - 3.5s)
+      tl.fromTo("#s1-title", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 0.2);
+      tl.fromTo("#s1-badge", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" }, 1.0);
+      tl.fromTo("#s1-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 1.3);
+      tl.to("#s1-content", { opacity: 0, y: -20, duration: 0.4, ease: "power2.in" }, 3.1);
+
+      // Scene 2: Models (3.5s - 8.0s)
+      tl.fromTo("#s2-title", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 3.6);
+      // beat-grid: cards cascade
+      tl.fromTo("#model-card-1", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 4.0);
+      tl.fromTo("#model-card-2", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 4.4);
+      tl.fromTo("#model-card-3", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 4.8);
+      tl.to("#s2-content", { opacity: 0, scale: 0.96, duration: 0.4, ease: "power2.in" }, 7.6);
+
+      // Scene 3: Hardware Tuning (8.0s - 12.5s)
+      // beat-locked: 8.74s
+      tl.fromTo("#s3-title", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 8.1);
+      tl.fromTo(".settings-card", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 8.74);
+      tl.fromTo("#s3-slider-threads", { width: "20%" }, { width: "50%", duration: 0.8, ease: "power2.inOut" }, 9.2);
+      tl.fromTo("#s3-slider-ctx", { width: "30%" }, { width: "65%", duration: 0.8, ease: "power2.inOut" }, 9.6);
+      tl.fromTo("#s3-toggle", { scale: 0.9 }, { scale: 1.05, duration: 0.3, yoyo: true, repeat: 1 }, 10.2);
+      tl.to("#s3-content", { opacity: 0, y: -20, duration: 0.4, ease: "power2.in" }, 12.1);
+
+      // Scene 4: Chat (12.5s - 17.0s)
+      // beat-locked: 13.11s
+      tl.fromTo(".phone-mockup", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 12.6);
+      tl.fromTo("#chat-user-msg", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.5)" }, 13.11);
+      tl.fromTo("#chat-thinking", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 13.7);
+      tl.to("#chat-thinking", { opacity: 0, duration: 0.2 }, 14.5);
+      tl.to("#chat-assistant-msg", { opacity: 1, duration: 0.4, ease: "power2.out" }, 14.7);
+      tl.to("#s4-content", { opacity: 0, scale: 0.95, duration: 0.4, ease: "power2.in" }, 16.6);
+
+      // Scene 5: Outro (17.0s - 20.0s)
+      // beat-locked: 17.47s
+      tl.fromTo(".outro-logo", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.7, ease: "back.out(1.8)" }, 17.2);
+      tl.fromTo(".outro-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 17.47);
+      tl.fromTo(".outro-sub", { opacity: 0, y: 15 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 17.8);
+      tl.fromTo(".outro-repo", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.5)" }, 18.2);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

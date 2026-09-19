@@ -1,0 +1,1 @@
+UTGPT brings private, offline on-device LLMs to Ubuntu Touch: run Qwen, TinyLlama, and SmolLM2 directly on your mobile hardware with zero cloud dependencies.
