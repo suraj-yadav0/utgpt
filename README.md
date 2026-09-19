@@ -4,10 +4,10 @@ An offline AI chat application built specifically for Ubuntu Touch, allowing use
 
 <p align="center">
   <a href="brag-output/brag.mp4">
-    <img src="brag-output/brag.jpg" alt="UTGPT Launch Video" width="800">
+    <img src="brag-output/brag.gif" alt="UTGPT Launch Video" width="800">
   </a>
   <br>
-  <em>Watch the <a href="brag-output/brag.mp4">UTGPT Launch Video</a> (20s on-device overview)</em>
+  <em>Watch with sound: <a href="brag-output/brag.mp4">UTGPT Launch Video</a> (20s on-device overview)</em>
 </p>
 
 ## Features
