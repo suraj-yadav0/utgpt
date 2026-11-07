@@ -108,13 +108,11 @@ Page {
 
     function resumeDownload(index) {
         var item = modelsList.get(index)
-        if (!item.requestId) {
-            var requestId = "download-" + index + "-" + Date.now()
-            modelsList.setProperty(index, "requestId", requestId)
-        }
+        var requestId = (item && item.requestId) ? item.requestId : ("download-" + index + "-" + Date.now())
+        modelsList.setProperty(index, "requestId", requestId)
         modelsList.setProperty(index, "downloading", true)
         modelsList.setProperty(index, "paused", false)
-        python.call("backend.download_model", [item.name, item.url, item.requestId])
+        python.call("backend.download_model", [item.name, item.url, requestId])
     }
 
     function cancelDownload(index) {

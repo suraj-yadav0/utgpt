@@ -75,6 +75,7 @@ Page {
     function stopInference() {
         if (!isResponding) return;
         userStopped = true
+        webSearchActive = false
         python.call("backend.stop_all_inference", [])
     }
 
@@ -128,9 +129,11 @@ Page {
             return
         }
 
+        thinkingTimer.stop()
+
         var lastIndex = messageModel.count - 1
         var currentText = messageModel.get(lastIndex).text
-        if (currentText === "..." || currentText.startsWith("Thinking")) {
+        if (currentText === "..." || currentText.startsWith("Thinking") || currentText.startsWith(i18n.tr("Thinking"))) {
             currentText = ""
         }
         var newText = currentText + chunk
@@ -156,11 +159,12 @@ Page {
         isResponding = false
         webSearchActive = false
 
+        var stoppedText = i18n.tr("Generation stopped by user.")
         if (!ok && messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
             var currentText = messageModel.get(lastIndex).text
-            var fallback = userStopped ? i18n.tr("Generation stopped by user.") : (errorMessage && errorMessage.length > 0 ? errorMessage : "The model stopped unexpectedly.")
-            if (currentText === "..." || currentText.startsWith("Thinking")) {
+            var fallback = userStopped ? stoppedText : (errorMessage && errorMessage.length > 0 ? errorMessage : "The model stopped unexpectedly.")
+            if (currentText === "..." || currentText.startsWith("Thinking") || currentText.startsWith(i18n.tr("Thinking"))) {
                 messageModel.setProperty(lastIndex, "text", fallback)
             } else if (userStopped) {
                 // Keep the generated text, do not append crash message
@@ -173,7 +177,14 @@ Page {
         if (messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
-            if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
+            if (lastItem.role === "assistant" &&
+                !userStopped &&
+                lastItem.text !== stoppedText &&
+                lastItem.text !== "Generation stopped by user." &&
+                lastItem.text !== "Thinking" &&
+                !lastItem.text.startsWith("Thinking") &&
+                !lastItem.text.startsWith(i18n.tr("Thinking")) &&
+                lastItem.text !== "...") {
                 python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
             }
         }
@@ -351,6 +362,11 @@ Page {
         onTriggered: {
             if (messageModel.count === 0) return
             var lastIndex = messageModel.count - 1
+            var currentText = messageModel.get(lastIndex).text
+            if (!currentText || (!currentText.startsWith("Thinking") && !currentText.startsWith(i18n.tr("Thinking")) && currentText !== "...")) {
+                thinkingTimer.stop()
+                return
+            }
             step = (step + 1) % 4
             var dots = ""
             if (step === 1) dots = "."
@@ -437,6 +453,7 @@ Page {
                         id: chatModelSelector
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
+                        enabled: !chatPage.isResponding
                         model: root.availableModels
                         currentIndex: root.availableModels.indexOf(root.selectedModel)
 
@@ -581,7 +598,7 @@ Page {
                             anchors.margins: units.gu(1)
                             text: model.text
                             wrapMode: Text.Wrap
-                            textFormat: model.role === "assistant" ? (typeof Text.MarkdownText !== "undefined" ? Text.MarkdownText : Text.AutoText) : Text.PlainText
+                            textFormat: model.role === "assistant" ? (typeof Text.MarkdownText !== "undefined" ? Text.MarkdownText : Text.PlainText) : Text.PlainText
                             color: model.role === "user" ? "#FFFFFF" : root.assistantBubbleTextColor
                         }
                     }
@@ -756,6 +773,8 @@ Page {
                     color: chatPage.isResponding ? "#C7162B" : ((!composer.text || composer.text.trim().length === 0) ? (root.isDark ? "#2D2D2D" : "#E2E8F0") : root.themeColor)
                     enabled: chatPage.isResponding || (composer.text && composer.text.trim().length > 0)
 
+                    property real lastClickTime: 0
+
                     Icon {
                         anchors.centerIn: parent
                         name: chatPage.isResponding ? "media-playback-stop" : "send"
@@ -765,6 +784,12 @@ Page {
                     }
 
                     onClicked: {
+                        var now = Date.now()
+                        if (now - lastClickTime < 400) {
+                            return
+                        }
+                        lastClickTime = now
+
                         if (chatPage.isResponding) {
                             chatPage.stopInference()
                         } else {
