@@ -136,22 +136,14 @@ Page {
         if (currentText === "..." || currentText.startsWith("Thinking") || currentText.startsWith(i18n.tr("Thinking"))) {
             currentText = ""
         }
-        var newText = currentText + chunk
 
-        // Format reasoning blocks cleanly for markdown/text display
-        newText = newText.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
-                         .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
-                         .replace(/<\|im_end\|>/gi, "")
-                         .replace(/<\/im_end>/gi, "")
-                         .replace(/<\|im_start\|>/gi, "")
-                         .replace(/<end_of_turn>/gi, "")
-                         .replace(/<start_of_turn>/gi, "")
-                         .replace(/<\|end\|>/gi, "")
-                         .replace(/<\|eot_id\|>/gi, "")
-                         .replace(/<\|start_header_id\|>/gi, "")
-                         .replace(/\[end of text\]/gi, "")
+        var text = chunk
+        if (text.indexOf("<think>") >= 0 || text.indexOf("</think>") >= 0) {
+            text = text.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
+                       .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
+        }
 
-        messageModel.setProperty(lastIndex, "text", newText)
+        messageModel.setProperty(lastIndex, "text", currentText + text)
         scrollToBottom()
     }
 
@@ -170,6 +162,29 @@ Page {
                 // Keep the generated text, do not append crash message
             } else {
                 messageModel.setProperty(lastIndex, "text", currentText + "\n" + fallback)
+            }
+        }
+
+        // Clean up stop tokens and normalize reasoning tags once generation ends
+        if (messageModel.count > 0) {
+            var lastIndex = messageModel.count - 1
+            var itemText = messageModel.get(lastIndex).text
+            if (itemText !== "..." && !itemText.startsWith("Thinking") && !itemText.startsWith(i18n.tr("Thinking")) &&
+                itemText !== stoppedText && itemText !== "Generation stopped by user.") {
+                var cleanedText = itemText.replace(/<think>\s*/gi, "*Thinking Process:*\n\n")
+                                         .replace(/\s*<\/think>\s*/gi, "\n\n---\n\n")
+                                         .replace(/<\|im_end\|>/gi, "")
+                                         .replace(/<\/im_end>/gi, "")
+                                         .replace(/<\|im_start\|>/gi, "")
+                                         .replace(/<end_of_turn>/gi, "")
+                                         .replace(/<start_of_turn>/gi, "")
+                                         .replace(/<\|end\|>/gi, "")
+                                         .replace(/<\|eot_id\|>/gi, "")
+                                         .replace(/<\|start_header_id\|>/gi, "")
+                                         .replace(/\[end of text\]/gi, "")
+                if (cleanedText !== itemText) {
+                    messageModel.setProperty(lastIndex, "text", cleanedText)
+                }
             }
         }
 
