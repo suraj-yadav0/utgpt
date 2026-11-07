@@ -521,6 +521,76 @@ class TestWebSearch(unittest.TestCase):
                 "phase": "started"
             })
 
+    def test_search_web_unquotes_ddg_redirect_url(self):
+        sample_html = (
+            '<html><body>'
+            '<table>'
+            '<tr><td><a class="result-link" href="/l/?kh=-1&uddg=https%3A%2F%2Fubports.com%2Fblog">UBports</a></td></tr>'
+            '<tr><td class="result-snippet">Test blog</td></tr>'
+            '</table>'
+            '</body></html>'
+        ).encode("utf-8")
+
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.read.return_value = sample_html
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(backend, "_urlopen", return_value=mock_resp):
+            results = backend.search_web("ubports redirect", num_results=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "https://ubports.com/blog")
+
+
+class TestSecurityAndStorageGuards(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.models_dir = os.path.join(self.tmp_dir, "models")
+        os.makedirs(self.models_dir, exist_ok=True)
+        self.patch_models = patch.object(backend, "MODELS_DIR", self.models_dir)
+        self.patch_models.start()
+
+    def tearDown(self):
+        self.patch_models.stop()
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_delete_model_blocks_path_traversal(self):
+        outside_file = os.path.join(self.tmp_dir, "outside.txt")
+        with open(outside_file, "w") as f:
+            f.write("secret")
+
+        result = backend.delete_model("../outside.txt")
+        self.assertFalse(result)
+        self.assertTrue(os.path.exists(outside_file))
+
+    def test_clear_partial_download_blocks_path_traversal(self):
+        outside_file = os.path.join(self.tmp_dir, "outside.txt.part")
+        with open(outside_file, "w") as f:
+            f.write("partial")
+
+        result = backend.clear_partial_download("../outside.txt")
+        self.assertFalse(result)
+        self.assertTrue(os.path.exists(outside_file))
+
+    def test_truncate_session_messages_subquery(self):
+        db_file = os.path.join(self.tmp_dir, "chat.db")
+        with patch.object(backend, "DB_PATH", db_file):
+            backend.DB_INITIALIZED = False
+            backend.init_db()
+            session_id = backend.add_chat_message("user", "msg 1", "test-session")
+            backend.add_chat_message("assistant", "msg 2", session_id)
+            backend.add_chat_message("user", "msg 3", session_id)
+            backend.add_chat_message("assistant", "msg 4", session_id)
+
+            success = backend.truncate_session_messages(session_id, 2)
+            self.assertTrue(success)
+
+            history = backend.load_chat_history(session_id)
+            self.assertEqual(len(history), 2)
+            self.assertEqual(history[0]["text"], "msg 1")
+            self.assertEqual(history[1]["text"], "msg 2")
+
 
 if __name__ == "__main__":
     unittest.main()

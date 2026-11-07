@@ -10,12 +10,18 @@ import subprocess
 import threading
 import urllib.request
 import urllib.error
+import urllib.parse
 import platform
 import tarfile
 import io
 import time
 import sys
 import sqlite3
+import signal
+import atexit
+import ctypes
+import ctypes.util
+from contextlib import contextmanager
 from html.parser import HTMLParser
 
 DEBUG_MODE = os.environ.get("UTGPT_DEBUG", "").lower() in ("1", "true", "yes")
@@ -30,13 +36,34 @@ def log_info(msg):
 def log_error(msg):
     print("UTGPT_LOG [ERROR]: {0}".format(msg), file=sys.stderr, flush=True)
 
+def _preexec_set_pdeathsig():
+    if sys.platform.startswith("linux"):
+        try:
+            libc_name = ctypes.util.find_library("c") or "libc.so.6"
+            libc = ctypes.CDLL(libc_name)
+            libc.prctl(1, signal.SIGTERM)
+        except Exception:
+            pass
+
 def _urlopen(req, timeout=60):
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _clean_ddg_url(url):
+    if not url:
+        return ""
     try:
-        import ssl
-        context = ssl._create_unverified_context()
-        return urllib.request.urlopen(req, timeout=timeout, context=context)
+        if "uddg=" in url:
+            parsed = urllib.parse.urlsplit(url)
+            query = parsed.query
+            if not query and "?" in url:
+                query = url.split("?", 1)[1]
+            params = urllib.parse.parse_qs(query)
+            if "uddg" in params and params["uddg"]:
+                return params["uddg"][0]
     except Exception:
-        return urllib.request.urlopen(req, timeout=timeout)
+        pass
+    return url
 
 
 class DDGLiteParser(HTMLParser):
@@ -52,7 +79,8 @@ class DDGLiteParser(HTMLParser):
         attrs_dict = dict(attrs)
         if tag == "a" and attrs_dict.get("class") == "result-link":
             self.in_link = True
-            self.current_result = {"url": attrs_dict.get("href")}
+            raw_url = attrs_dict.get("href", "")
+            self.current_result = {"url": _clean_ddg_url(raw_url)}
             self.accumulated_text = []
         elif tag == "td" and attrs_dict.get("class") == "result-snippet":
             self.in_snippet = True
@@ -77,6 +105,7 @@ class DDGLiteParser(HTMLParser):
 WEB_SEARCH_CACHE = {}
 WEB_SEARCH_CACHE_TTL = 1800.0
 WEB_SEARCH_TIMEOUT = 8
+WEB_SEARCH_CACHE_LOCK = threading.Lock()
 
 
 def search_web(query, num_results=3):
@@ -89,9 +118,10 @@ def search_web(query, num_results=3):
     """
     cache_key = (query or "").strip().lower()
     now = time.time()
-    cached = WEB_SEARCH_CACHE.get(cache_key)
-    if cached and now - cached[0] < WEB_SEARCH_CACHE_TTL:
-        return [dict(item) for item in cached[1][:num_results]]
+    with WEB_SEARCH_CACHE_LOCK:
+        cached = WEB_SEARCH_CACHE.get(cache_key)
+        if cached and now - cached[0] < WEB_SEARCH_CACHE_TTL:
+            return [dict(item) for item in cached[1][:num_results]]
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -105,9 +135,10 @@ def search_web(query, num_results=3):
             parser = DDGLiteParser()
             parser.feed(html)
             results = parser.results[:num_results]
-            if len(WEB_SEARCH_CACHE) > 200:
-                WEB_SEARCH_CACHE.clear()
-            WEB_SEARCH_CACHE[cache_key] = (now, results)
+            with WEB_SEARCH_CACHE_LOCK:
+                if len(WEB_SEARCH_CACHE) > 200:
+                    WEB_SEARCH_CACHE.clear()
+                WEB_SEARCH_CACHE[cache_key] = (now, results)
             return [dict(item) for item in results]
     except Exception as e:
         log_error("Web search failed for query '{0}': {1}".format(query, e))
@@ -135,7 +166,7 @@ def is_binary_working(path):
         return False
     try:
         env = os.environ.copy()
-        ld_library_paths = [MODELS_DIR, os.path.join(APP_DIR, "assets")]
+        ld_library_paths = [os.path.join(APP_DIR, "assets")]
         if "LD_LIBRARY_PATH" in env:
             env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths + [env["LD_LIBRARY_PATH"]])
         else:
@@ -163,6 +194,7 @@ def get_llama_completion_path():
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 INFERENCE_LOCK = threading.Lock()
 ACTIVE_PROCESSES = set()
+ACTIVE_TOKENS = set()
 
 DEFAULT_CATALOG = [
     {
@@ -497,7 +529,10 @@ def _emit_search_status(callback_ref, phase):
 
 def _emit_done(callback_ref, ok=True, error_message=""):
     if callable(callback_ref):
-        callback_ref()
+        try:
+            callback_ref(ok, error_message)
+        except TypeError:
+            callback_ref()
         return
     if callback_ref:
         _send_event("inference_done", {
@@ -522,12 +557,21 @@ def _terminate_process(process):
         return
     if process.poll() is not None:
         return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
+
+    def killer():
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=killer, daemon=True).start()
 
 
 def list_models():
@@ -552,9 +596,24 @@ def get_free_storage():
 
 
 def download_model_thread(name, url, progress_callback):
-    models_dir = _ensure_models_dir()
-    filename = os.path.basename(url.split("?", 1)[0]) or (name + ".gguf")
-    destination = os.path.join(models_dir, filename)
+    models_dir = os.path.realpath(_ensure_models_dir())
+    clean_name = os.path.basename(name or "")
+    url_str = (url or "").strip()
+    parsed_url = urllib.parse.urlsplit(url_str)
+    if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+        _emit_download_error(progress_callback, name, "Invalid download URL")
+        return ""
+
+    url_filename = os.path.basename(parsed_url.path)
+    filename = url_filename or (clean_name + ".gguf" if clean_name else "model.gguf")
+    filename = os.path.basename(filename)
+    if not filename or filename in (".", ".."):
+        filename = (clean_name + ".gguf") if clean_name and clean_name not in (".", "..") else "model.gguf"
+
+    destination = os.path.realpath(os.path.join(models_dir, filename))
+    if not destination.startswith(models_dir + os.sep):
+        _emit_download_error(progress_callback, name, "Invalid destination path")
+        return ""
     temp_destination = destination + ".part"
 
     bytes_written = 0
@@ -563,7 +622,7 @@ def download_model_thread(name, url, progress_callback):
 
     total_size = 0
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+        request = urllib.request.Request(url_str, headers={"User-Agent": "UTGPT/0.1"})
         
         try:
             if bytes_written > 0:
@@ -572,14 +631,14 @@ def download_model_thread(name, url, progress_callback):
         except urllib.error.HTTPError as http_err:
             if bytes_written > 0:
                 bytes_written = 0
-                request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+                request = urllib.request.Request(url_str, headers={"User-Agent": "UTGPT/0.1"})
                 response = _urlopen(request, timeout=60)
             else:
                 raise http_err
         except Exception as err:
             if bytes_written > 0:
                 bytes_written = 0
-                request = urllib.request.Request(url, headers={"User-Agent": "UTGPT/0.1"})
+                request = urllib.request.Request(url_str, headers={"User-Agent": "UTGPT/0.1"})
                 response = _urlopen(request, timeout=60)
             else:
                 raise err
@@ -909,8 +968,15 @@ def get_inference_engine_status():
     }
 
 def delete_model(filename):
-    models_dir = _ensure_models_dir()
-    filepath = os.path.join(models_dir, filename)
+    if not filename:
+        return False
+    models_dir = os.path.realpath(_ensure_models_dir())
+    clean_name = os.path.basename(filename)
+    if not clean_name or clean_name in (".", ".."):
+        return False
+    filepath = os.path.realpath(os.path.join(models_dir, clean_name))
+    if not filepath.startswith(models_dir + os.sep):
+        return False
     if os.path.exists(filepath):
         try:
             os.remove(filepath)
@@ -920,8 +986,15 @@ def delete_model(filename):
     return False
 
 def clear_partial_download(filename):
-    models_dir = _ensure_models_dir()
-    part_filepath = os.path.join(models_dir, filename + ".part")
+    if not filename:
+        return False
+    models_dir = os.path.realpath(_ensure_models_dir())
+    clean_name = os.path.basename(filename)
+    if not clean_name or clean_name in (".", ".."):
+        return False
+    part_filepath = os.path.realpath(os.path.join(models_dir, clean_name + ".part"))
+    if not part_filepath.startswith(models_dir + os.sep):
+        return False
     if os.path.exists(part_filepath):
         try:
             os.remove(part_filepath)
@@ -932,210 +1005,165 @@ def clear_partial_download(filename):
 
 
 DB_PATH = os.path.expanduser("~/.local/share/utgpt.surajyadav/chat_history.db")
+DB_INITIALIZED = False
+DB_INIT_LOCK = threading.Lock()
+
+@contextmanager
+def _get_db_context():
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            created_at REAL NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            role TEXT NOT NULL,
-            text TEXT NOT NULL,
-            timestamp REAL NOT NULL
-        )
-    """)
-    
-    # Check if 'session_id' column exists in messages table
-    cursor.execute("PRAGMA table_info(messages)")
-    columns = [row[1] for row in cursor.fetchall()]
-    if 'session_id' not in columns:
-        try:
-            cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+    global DB_INITIALIZED
+    with DB_INIT_LOCK:
+        if DB_INITIALIZED:
+            return
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        with _get_db_context() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    timestamp REAL NOT NULL
+                )
+            """)
 
-    # Assign orphaned messages (from previous single-chat versions) to a default session
-    cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id IS NULL")
-    null_count = cursor.fetchone()[0]
-    if null_count > 0:
-        cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Previous Chat", time.time()))
-        default_session_id = cursor.lastrowid
-        cursor.execute("UPDATE messages SET session_id = ? WHERE session_id IS NULL", (default_session_id,))
-        conn.commit()
+            cursor.execute("PRAGMA table_info(messages)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'session_id' not in columns:
+                try:
+                    cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
+                except sqlite3.OperationalError:
+                    pass
 
-    # Prune corrupt entries from previous session implementations
-    cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
-    conn.commit()
-    conn.close()
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id IS NULL")
+            null_count = cursor.fetchone()[0]
+            if null_count > 0:
+                cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Previous Chat", time.time()))
+                default_session_id = cursor.lastrowid
+                cursor.execute("UPDATE messages SET session_id = ? WHERE session_id IS NULL", (default_session_id,))
+
+            cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
+        DB_INITIALIZED = True
 
 def get_sessions():
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title, created_at FROM sessions ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"id": r[0], "title": r[1], "created_at": r[2]} for r in rows]
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title, created_at FROM sessions ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        return [{"id": r[0], "title": r[1], "created_at": r[2]} for r in rows]
 
 def get_latest_session_id():
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else None
-
-def delete_session(session_id):
-    init_db()
-    if session_id is None or session_id == "" or session_id == 0:
-        return False
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-    cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-    conn.commit()
-    conn.close()
-    return True
-
-def rename_session(session_id, title):
-    init_db()
-    if session_id is None or session_id == "" or session_id == 0 or not title:
-        return False
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE sessions SET title = ? WHERE id = ?", (title.strip(), session_id))
-    conn.commit()
-    conn.close()
-    return True
-
-def load_chat_history(session_id=None):
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # If no session_id provided, default to the latest session (if any)
-    if session_id is None or session_id == "" or session_id == 0:
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
         cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
         row = cursor.fetchone()
-        if not row:
-            conn.close()
-            return []
-        session_id = row[0]
+        return row[0] if row else None
 
-    cursor.execute("SELECT role, text FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"role": r, "text": t} for r, t in rows]
+def delete_session(session_id):
+    if not session_id:
+        return False
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        return True
+
+def rename_session(session_id, title):
+    if not session_id or not title:
+        return False
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE sessions SET title = ? WHERE id = ?", (title.strip(), session_id))
+        return True
+
+def load_chat_history(session_id=None):
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        if not session_id:
+            cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
+            row = cursor.fetchone()
+            if not row:
+                return []
+            session_id = row[0]
+
+        cursor.execute("SELECT role, text FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+        rows = cursor.fetchall()
+        return [{"role": r, "text": t} for r, t in rows]
 
 def add_chat_message(role, text, session_id=None):
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Auto-create session if none active/provided
-    if session_id is None or session_id == "" or session_id == 0:
-        title = text.strip()
-        title = " ".join(title.split())  # Collapse whitespaces/newlines
-        if len(title) > 30:
-            title = title[:27] + "..."
-        if not title:
-            title = "New Chat"
-            
-        cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", (title, time.time()))
-        session_id = cursor.lastrowid
-        
-    cursor.execute("INSERT INTO messages (session_id, role, text, timestamp) VALUES (?, ?, ?, ?)", 
-                   (session_id, role, text, time.time()))
-    conn.commit()
-    conn.close()
-    return session_id
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        if not session_id:
+            title = text.strip()
+            title = " ".join(title.split())
+            if len(title) > 30:
+                title = title[:27] + "..."
+            if not title:
+                title = "New Chat"
+
+            cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", (title, time.time()))
+            session_id = cursor.lastrowid
+
+        cursor.execute("INSERT INTO messages (session_id, role, text, timestamp) VALUES (?, ?, ?, ?)", 
+                       (session_id, role, text, time.time()))
+        return session_id
 
 def clear_chat_history():
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages")
-    cursor.execute("DELETE FROM sessions")
-    conn.commit()
-    conn.close()
-    return True
+    if not DB_INITIALIZED:
+        init_db()
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages")
+        cursor.execute("DELETE FROM sessions")
+        return True
 
 def truncate_session_messages(session_id, keep_count):
     if not session_id:
         return False
-    init_db()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
-    rows = cursor.fetchall()
-    
-    if len(rows) > keep_count:
-        ids_to_delete = [row[0] for row in rows[keep_count:]]
-        placeholders = ",".join("?" for _ in ids_to_delete)
-        cursor.execute(f"DELETE FROM messages WHERE id IN ({placeholders})", ids_to_delete)
-        conn.commit()
-        
-    conn.close()
-    return True
-
-def retrieve_relevant_context(query, exclude_texts, limit=3):
-    init_db()
-    stopwords = {
-        "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "and", "or", 
-        "who", "what", "how", "why", "where", "you", "me", "my", "i", "do", "does", 
-        "did", "have", "has", "had", "for", "with", "this", "that", "it", "he", "she", 
-        "they", "we", "about", "your", "mine", "am", "go", "get", "can", "could", "would",
-        "here", "there", "when", "then", "which", "whoever", "whose", "whom"
-    }
-    
-    # Extract keywords
-    words = [w.strip("?,.:;!\"'()[]{}<>-_+=|\\/`~@#$%^&*").lower() for w in query.split()]
-    keywords = [w for w in words if w and w not in stopwords and len(w) > 2]
-    
-    if not keywords:
-        return []
-        
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    matches = {}
-    for kw in keywords:
-        cursor.execute("SELECT id, role, text, timestamp FROM messages WHERE text LIKE ?", (f"%{kw}%",))
-        for row in cursor.fetchall():
-            msg_id, role, text, timestamp = row
-            if text in exclude_texts:
-                continue
-            if msg_id not in matches:
-                matches[msg_id] = {
-                    "id": msg_id,
-                    "role": role,
-                    "text": text,
-                    "timestamp": timestamp,
-                    "score": 0
-                }
-            matches[msg_id]["score"] += 1
-            
-    conn.close()
-    
-    if not matches:
-        return []
-        
-    sorted_matches = sorted(matches.values(), key=lambda x: (x["score"], x["timestamp"]), reverse=True)
-    relevant_msgs = sorted_matches[:limit]
-    relevant_msgs = sorted(relevant_msgs, key=lambda x: x["timestamp"])
-    
-    return [{"role": m["role"], "text": m["text"]} for m in relevant_msgs]
+    if not DB_INITIALIZED:
+        init_db()
+    keep_count = max(0, int(keep_count))
+    with _get_db_context() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM messages
+            WHERE session_id = ?
+              AND id NOT IN (
+                  SELECT id FROM messages
+                  WHERE session_id = ?
+                  ORDER BY id ASC
+                  LIMIT ?
+              )
+        """, (session_id, session_id, keep_count))
+        return True
 
 def get_model_metadata(model_filename):
     # Try local models.json first
@@ -1330,7 +1358,7 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     elif len(args) >= 7:
         threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = args[:7]
     elif len(args) > 0:
-        if not isinstance(args[0], (str, callable)):
+        if not (isinstance(args[0], str) or callable(args[0])):
             try:
                 threads = int(args[0])
                 if len(args) > 1: ctx_size = int(args[1])
@@ -1390,9 +1418,17 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         _emit_done(done_callback, ok=False, error_message=error_msg)
         return False
 
+    cancel_token = threading.Event()
+    with INFERENCE_LOCK:
+        ACTIVE_TOKENS.add(cancel_token)
+
     def worker():
         process = None
         try:
+            if cancel_token.is_set():
+                _emit_done(done_callback, ok=False, error_message="Inference canceled")
+                return
+
             web_context_msgs = []
             if web_search_enabled:
                 log_info("Performing web search for query: {0}".format(current_query))
@@ -1412,11 +1448,11 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 finally:
                     _emit_search_status(token_callback, "finished")
 
-            exclude_texts = {current_query}
-            for msg in recent_history:
-                exclude_texts.add(msg.get("content", ""))
+            if cancel_token.is_set():
+                _emit_done(done_callback, ok=False, error_message="Inference canceled")
+                return
 
-            context_msgs = web_context_msgs + retrieve_relevant_context(current_query, exclude_texts, limit=3)
+            context_msgs = web_context_msgs
             prompt, boundary = get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs)
             log_debug("Constructed prompt: {0}".format(repr(prompt)))
 
@@ -1493,12 +1529,17 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             args.extend(additional_args)
 
             env = os.environ.copy()
-            ld_library_paths = [MODELS_DIR, os.path.join(APP_DIR, "assets")]
+            ld_library_paths = [os.path.join(APP_DIR, "assets")]
             if "LD_LIBRARY_PATH" in env:
                 env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths + [env["LD_LIBRARY_PATH"]])
             else:
                 env["LD_LIBRARY_PATH"] = os.path.pathsep.join(ld_library_paths)
 
+            if cancel_token.is_set():
+                _emit_done(done_callback, ok=False, error_message="Inference canceled")
+                return
+
+            preexec = _preexec_set_pdeathsig if sys.platform.startswith("linux") else None
             process = subprocess.Popen(
                 args,
                 stdin=subprocess.DEVNULL,
@@ -1506,7 +1547,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
                 bufsize=1,
-                env=env
+                env=env,
+                preexec_fn=preexec,
+                encoding="utf-8",
+                errors="replace"
             )
             _register_process(process)
             log_info("Inference engine launched successfully, starting stdout read loop")
@@ -1532,7 +1576,10 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             if is_completion:
                 log_debug("Using simplified completion stdout read loop")
+                chunk_buffer = ""
                 while True:
+                    if cancel_token.is_set():
+                        break
                     char = process.stdout.read(1)
                     if not char:
                         break
@@ -1540,15 +1587,21 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                     output_buffer += char
                     
                     if len(output_buffer) > 20:
-                        emit_char = output_buffer[0]
+                        safe_char = output_buffer[0]
                         output_buffer = output_buffer[1:]
                         if not has_emitted_content:
-                            if emit_char.strip() == "":
+                            if safe_char.strip() == "":
                                 continue
-                            else:
-                                has_emitted_content = True
-                        _emit_token(token_callback, emit_char)
+                            has_emitted_content = True
+                        chunk_buffer += safe_char
+                        if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
+                            _emit_token(token_callback, chunk_buffer)
+                            chunk_buffer = ""
                 
+                if chunk_buffer:
+                    _emit_token(token_callback, chunk_buffer)
+                    chunk_buffer = ""
+
                 if output_buffer:
                     if not has_emitted_content:
                         output_buffer = output_buffer.lstrip()
@@ -1561,8 +1614,11 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 log_debug("Using legacy cli boundary detection stdout read loop")
                 started = False
                 checked_banner = False
+                chunk_buffer = ""
                 
                 while True:
+                    if cancel_token.is_set():
+                        break
                     char = process.stdout.read(1)
                     if not char:
                         break
@@ -1590,14 +1646,20 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                         break
                         
                     if len(output_buffer) > 20:
-                        emit_char = output_buffer[0]
+                        safe_char = output_buffer[0]
                         output_buffer = output_buffer[1:]
                         if not has_emitted_content:
-                            if emit_char.strip() == "":
+                            if safe_char.strip() == "":
                                 continue
-                            else:
-                                has_emitted_content = True
-                        _emit_token(token_callback, emit_char)
+                            has_emitted_content = True
+                        chunk_buffer += safe_char
+                        if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
+                            _emit_token(token_callback, chunk_buffer)
+                            chunk_buffer = ""
+
+                if chunk_buffer:
+                    _emit_token(token_callback, chunk_buffer)
+                    chunk_buffer = ""
 
                 if not started and "Loading model" not in output_buffer:
                     started = True
@@ -1627,6 +1689,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             _terminate_process(process)
             _emit_done(done_callback, ok=False, error_message=str(error))
         finally:
+            with INFERENCE_LOCK:
+                ACTIVE_TOKENS.discard(cancel_token)
             if process is not None:
                 if process.stdout is not None:
                     process.stdout.close()
@@ -1640,16 +1704,16 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     return True
 
 
-def get_hardcoded_models():
-    return {item["name"]: item["url"] for item in DEFAULT_CATALOG}
-
-
 def stop_all_inference():
     with INFERENCE_LOCK:
+        for token in ACTIVE_TOKENS:
+            token.set()
         processes = list(ACTIVE_PROCESSES)
 
     for process in processes:
         _terminate_process(process)
+
+atexit.register(stop_all_inference)
 
 
 def import_local_model_thread(file_url, request_id):
