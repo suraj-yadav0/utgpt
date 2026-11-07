@@ -23,7 +23,7 @@ import sys
 import tempfile
 import shutil
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
@@ -645,6 +645,93 @@ class TestPonytailBackendSimplifications(unittest.TestCase):
             self.assertIn("ctx_size=4096", matching[0])
             self.assertIn("flash_attn=off", matching[0])
             self.assertIn("web_search=True", matching[0])
+
+    def test_db_auto_initializes_in_context(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_file = os.path.join(tmp_dir, "test_chat.db")
+            with patch.object(backend, "DB_PATH", db_file):
+                backend.DB_INITIALIZED = False
+                self.assertFalse(backend.DB_INITIALIZED)
+                with backend._get_db_context() as conn:
+                    self.assertTrue(backend.DB_INITIALIZED)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    tables = {r[0] for r in cursor.fetchall()}
+                    self.assertIn("sessions", tables)
+                    self.assertIn("messages", tables)
+
+    def test_inference_engine_status_event_emitted_on_completion(self):
+        events = []
+        with patch.object(backend, "ensure_llama_cli", return_value=True), \
+             patch.object(backend, "get_llama_cli_path", return_value="/fake/llama-cli"), \
+             patch.object(backend, "get_llama_completion_path", return_value="/fake/llama-completion"), \
+             patch.object(backend, "is_binary_working", return_value=True), \
+             patch.object(backend, "_send_event", side_effect=lambda ev, payload: events.append((ev, payload))):
+            backend.download_llama_cli_in_background()
+
+        status_events = [payload for ev, payload in events if ev == "inference_engine_status"]
+        self.assertGreaterEqual(len(status_events), 1)
+        final_event = status_events[-1]
+        self.assertEqual(final_event["status"], "ready")
+        self.assertEqual(final_event["error"], "")
+
+    def test_prompt_formatting_clean_context(self):
+        context_msgs = [
+            {"role": "system", "text": "Web Search Results:\n1. Latest news"}
+        ]
+        prompt, boundary = backend.get_prompt_and_boundary(
+            "qwen-2.5-3b.gguf",
+            "What is today's headline?",
+            [],
+            context_msgs
+        )
+        self.assertIn("Web Search Results:\n1. Latest news", prompt)
+        self.assertNotIn("Relevant facts and details from previous conversations", prompt)
+
+    def test_stdout_streaming_batches_and_strips_markers(self):
+        import io
+        import threading
+        tokens = []
+        done_called = threading.Event()
+
+        fake_stdout = io.StringIO("Hello world from UTGPT! [end of text]")
+        mock_proc = MagicMock()
+        mock_proc.stdout = fake_stdout
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "model.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake model")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake bin")
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc):
+
+                backend.run_inference(
+                    "model.gguf",
+                    "Hi",
+                    0.7,
+                    100,
+                    4,
+                    2048,
+                    "off",
+                    "f16",
+                    False,
+                    lambda t: tokens.append(t),
+                    lambda ok, err: done_called.set()
+                )
+                self.assertTrue(done_called.wait(timeout=3.0))
+
+        combined = "".join(tokens)
+        self.assertIn("Hello world from UTGPT!", combined)
+        self.assertNotIn("[end of text]", combined)
 
 
 if __name__ == "__main__":

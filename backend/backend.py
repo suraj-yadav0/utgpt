@@ -802,6 +802,7 @@ def download_llama_cli_in_background():
     global LLAMA_CLI_READY, LLAMA_CLI_ERROR, LLAMA_CLI_DOWNLOADING
     LLAMA_CLI_DOWNLOADING = True
     LLAMA_CLI_ERROR = None
+    _send_event("inference_engine_status", {"status": "downloading", "error": ""})
     try:
         if ensure_llama_cli():
             cli_path = get_llama_cli_path()
@@ -818,6 +819,10 @@ def download_llama_cli_in_background():
         LLAMA_CLI_ERROR = str(e)
     finally:
         LLAMA_CLI_DOWNLOADING = False
+        _send_event("inference_engine_status", {
+            "status": "ready" if LLAMA_CLI_READY else "error",
+            "error": LLAMA_CLI_ERROR or ""
+        })
 
 def start_inference_engine_download():
     global LLAMA_CLI_READY, LLAMA_CLI_DOWNLOADING
@@ -894,6 +899,8 @@ DB_INIT_LOCK = threading.Lock()
 
 @contextmanager
 def _get_db_context():
+    if not DB_INITIALIZED:
+        init_db()
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
@@ -909,45 +916,49 @@ def init_db():
         if DB_INITIALIZED:
             return
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-        with _get_db_context() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    created_at REAL NOT NULL
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    role TEXT NOT NULL,
-                    text TEXT NOT NULL,
-                    timestamp REAL NOT NULL
-                )
-            """)
+        conn = sqlite3.connect(DB_PATH, timeout=10.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+        try:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        created_at REAL NOT NULL
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        role TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        timestamp REAL NOT NULL
+                    )
+                """)
 
-            cursor.execute("PRAGMA table_info(messages)")
-            columns = [row[1] for row in cursor.fetchall()]
-            if 'session_id' not in columns:
-                try:
-                    cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
-                except sqlite3.OperationalError:
-                    pass
+                cursor.execute("PRAGMA table_info(messages)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'session_id' not in columns:
+                    try:
+                        cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
+                    except sqlite3.OperationalError:
+                        pass
 
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id IS NULL")
-            null_count = cursor.fetchone()[0]
-            if null_count > 0:
-                cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Previous Chat", time.time()))
-                default_session_id = cursor.lastrowid
-                cursor.execute("UPDATE messages SET session_id = ? WHERE session_id IS NULL", (default_session_id,))
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE session_id IS NULL")
+                null_count = cursor.fetchone()[0]
+                if null_count > 0:
+                    cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", ("Previous Chat", time.time()))
+                    default_session_id = cursor.lastrowid
+                    cursor.execute("UPDATE messages SET session_id = ? WHERE session_id IS NULL", (default_session_id,))
 
-            cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
-        DB_INITIALIZED = True
+                cursor.execute("DELETE FROM messages WHERE text LIKE '%Loading model%' OR text LIKE '%<start_of_turn>%' OR text LIKE '%<|im_start|>%' OR text LIKE '%<|start_header_id|>%'")
+            DB_INITIALIZED = True
+        finally:
+            conn.close()
 
 def get_sessions():
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT id, title, created_at FROM sessions ORDER BY created_at DESC")
@@ -955,8 +966,6 @@ def get_sessions():
         return [{"id": r[0], "title": r[1], "created_at": r[2]} for r in rows]
 
 def get_latest_session_id():
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1")
@@ -966,8 +975,6 @@ def get_latest_session_id():
 def delete_session(session_id):
     if not session_id:
         return False
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -977,16 +984,12 @@ def delete_session(session_id):
 def rename_session(session_id, title):
     if not session_id or not title:
         return False
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE sessions SET title = ? WHERE id = ?", (title.strip(), session_id))
         return True
 
 def load_chat_history(session_id=None):
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         if not session_id:
@@ -1001,8 +1004,6 @@ def load_chat_history(session_id=None):
         return [{"role": r, "text": t} for r, t in rows]
 
 def add_chat_message(role, text, session_id=None):
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         if not session_id:
@@ -1021,8 +1022,6 @@ def add_chat_message(role, text, session_id=None):
         return session_id
 
 def clear_chat_history():
-    if not DB_INITIALIZED:
-        init_db()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM messages")
@@ -1032,8 +1031,6 @@ def clear_chat_history():
 def truncate_session_messages(session_id, keep_count):
     if not session_id:
         return False
-    if not DB_INITIALIZED:
-        init_db()
     keep_count = max(0, int(keep_count))
     with _get_db_context() as conn:
         cursor = conn.cursor()
@@ -1071,7 +1068,7 @@ def get_model_metadata(model_filename):
 def get_prompt_and_boundary(model_filename, current_query, recent_history, context_msgs):
     """
     Formats the conversation prompt using model-specific templates,
-    integrating retrieved relevant history context (RAG) in the system prompt.
+    integrating real-time context (such as web search) in the system prompt.
     Includes context window budgeting to prevent leakage and out-of-token crashes.
     """
     model_lower = model_filename.lower()
@@ -1127,14 +1124,8 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
     if allowed_context_msgs:
         for msg in allowed_context_msgs:
             text_cleaned = msg.get("text", "").strip()
-            if not text_cleaned:
-                continue
-            if text_cleaned.startswith("Web Search Results"):
+            if text_cleaned:
                 context_str += f"{text_cleaned}\n\n"
-            else:
-                if "Relevant facts and details" not in context_str:
-                    context_str += "Relevant facts and details from previous conversations:\n"
-                context_str += f"- {text_cleaned}\n"
 
     # Format using resolved template_type
     prompt = ""
@@ -1433,30 +1424,29 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 _emit_token(token_callback, "<think>\n")
                 has_emitted_content = True
 
-            if is_completion:
-                log_debug("Using simplified completion stdout read loop")
-                chunk_buffer = ""
-                while True:
-                    if cancel_token.is_set():
-                        break
-                    char = process.stdout.read(1)
-                    if not char:
-                        break
-                    
-                    output_buffer += char
-                    
-                    if len(output_buffer) > 20:
-                        safe_char = output_buffer[0]
-                        output_buffer = output_buffer[1:]
-                        if not has_emitted_content:
-                            if safe_char.strip() == "":
-                                continue
-                            has_emitted_content = True
-                        chunk_buffer += safe_char
-                        if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
-                            _emit_token(token_callback, chunk_buffer)
-                            chunk_buffer = ""
-                
+            chunk_buffer = ""
+            while True:
+                if cancel_token.is_set():
+                    break
+                char = process.stdout.read(1)
+                if not char:
+                    break
+
+                output_buffer += char
+
+                if len(output_buffer) > 20:
+                    safe_char = output_buffer[0]
+                    output_buffer = output_buffer[1:]
+                    if not has_emitted_content:
+                        if safe_char.strip() == "":
+                            continue
+                        has_emitted_content = True
+                    chunk_buffer += safe_char
+                    if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
+                        _emit_token(token_callback, chunk_buffer)
+                        chunk_buffer = ""
+
+            if not cancel_token.is_set():
                 if chunk_buffer:
                     _emit_token(token_callback, chunk_buffer)
                     chunk_buffer = ""
@@ -1464,72 +1454,11 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 if output_buffer:
                     if not has_emitted_content:
                         output_buffer = output_buffer.lstrip()
-                    # Clean up llama-completion's end-of-text markers
-                    output_buffer = output_buffer.replace(" [end of text]", "").replace("[end of text]", "")
+                    for marker in (" [end of text]", "[end of text]", "<|im_end|>", "</im_end>", "<|eot_id|>", "<end_of_turn>", "<|end|>", "</s>"):
+                        output_buffer = output_buffer.replace(marker, "")
                     if output_buffer:
-                        log_debug("Emitting remaining completion buffer: {0}".format(repr(output_buffer)))
+                        log_debug("Emitting remaining buffer content: {0}".format(repr(output_buffer)))
                         _emit_token(token_callback, output_buffer)
-            else:
-                log_debug("Using legacy cli boundary detection stdout read loop")
-                started = False
-                checked_banner = False
-                chunk_buffer = ""
-                
-                while True:
-                    if cancel_token.is_set():
-                        break
-                    char = process.stdout.read(1)
-                    if not char:
-                        break
-                    
-                    output_buffer += char
-                    
-                    if not checked_banner:
-                        if len(output_buffer) >= 15:
-                            if "Loading model" in output_buffer:
-                                log_debug("Detected interactive banner, waiting for boundary")
-                            else:
-                                log_debug("No interactive banner detected, starting stream immediately")
-                                started = True
-                            checked_banner = True
-                    
-                    if not started:
-                        if boundary in output_buffer or "Assistant:" in output_buffer or "<|im_start|>assistant" in output_buffer or "<|start_header_id|>assistant" in output_buffer or "<start_of_turn>assistant" in output_buffer or "<|assistant|>" in output_buffer:
-                            log_debug("Detected boundary, starting token stream")
-                            output_buffer = ""
-                            started = True
-                        continue
-                        
-                    if "[ Prompt:" in output_buffer:
-                        log_debug("Detected '[ Prompt:' footer boundary")
-                        break
-                        
-                    if len(output_buffer) > 20:
-                        safe_char = output_buffer[0]
-                        output_buffer = output_buffer[1:]
-                        if not has_emitted_content:
-                            if safe_char.strip() == "":
-                                continue
-                            has_emitted_content = True
-                        chunk_buffer += safe_char
-                        if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
-                            _emit_token(token_callback, chunk_buffer)
-                            chunk_buffer = ""
-
-                if chunk_buffer:
-                    _emit_token(token_callback, chunk_buffer)
-                    chunk_buffer = ""
-
-                if not started and "Loading model" not in output_buffer:
-                    started = True
-
-                if started and output_buffer:
-                    remaining = output_buffer.split("[ Prompt:")[0]
-                    if not has_emitted_content:
-                        remaining = remaining.lstrip()
-                    if remaining:
-                        log_debug("Emitting remaining buffer content: {0}".format(repr(remaining)))
-                        _emit_token(token_callback, remaining)
 
             log_debug("Waiting for process to exit")
             exit_code = process.wait()
