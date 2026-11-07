@@ -11,7 +11,7 @@
         },
         {
             "title": "Web Search Integration",
-            "icon": "stock_internet",
+            "icon": "stock_website",
             "description": "Enable live web search grounding directly from Settings to get real-time answers with source links."
         },
         {

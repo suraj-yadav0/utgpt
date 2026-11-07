@@ -331,10 +331,10 @@ class TestDownloadLlamaCliInBackground(LlamaCliGlobalsResetMixin, unittest.TestC
 
 class TestGetReleaseNotes(unittest.TestCase):
     DEFAULT_FALLBACK = {
-        "version": "0.0.2",
+        "version": "0.1.0",
         "date": "2026-07-26",
         "title": "What's New in UTGPT",
-        "subtitle": "Version 0.0.2 Release Notes",
+        "subtitle": "Version 0.1.0 Release Notes",
         "features": [],
     }
 
@@ -418,7 +418,7 @@ class TestInitialize(LlamaCliGlobalsResetMixin, unittest.TestCase):
         self.assertTrue(result["llamaCliReady"])
         self.assertTrue(backend.LLAMA_CLI_READY)
 
-    def test_version_defaults_to_0_0_2_when_release_notes_missing_version_key(self):
+    def test_version_defaults_to_0_1_0_when_release_notes_missing_version_key(self):
         release_notes = {"date": "2027-01-01", "title": "T", "subtitle": "S", "features": []}
         patches = self._base_patches(True, release_notes)
         for p in patches:
@@ -427,10 +427,10 @@ class TestInitialize(LlamaCliGlobalsResetMixin, unittest.TestCase):
 
         result = backend.initialize()
 
-        self.assertEqual(result["version"], "0.0.2")
+        self.assertEqual(result["version"], "0.1.0")
 
     def test_llama_cli_ready_false_when_binaries_not_working(self):
-        release_notes = {"version": "0.0.2", "features": []}
+        release_notes = {"version": "0.1.0", "features": []}
         patches = self._base_patches(False, release_notes)
         for p in patches:
             p.start()
@@ -442,7 +442,7 @@ class TestInitialize(LlamaCliGlobalsResetMixin, unittest.TestCase):
         self.assertFalse(backend.LLAMA_CLI_READY)
 
     def test_result_shape_contains_all_expected_keys(self):
-        release_notes = {"version": "0.0.2", "features": []}
+        release_notes = {"version": "0.1.0", "features": []}
         patches = self._base_patches(True, release_notes)
         for p in patches:
             p.start()
@@ -455,6 +455,71 @@ class TestInitialize(LlamaCliGlobalsResetMixin, unittest.TestCase):
             "debug", "isDesktop", "version", "releaseNotes",
         }
         self.assertEqual(expected_keys, set(result.keys()))
+
+
+class TestWebSearch(unittest.TestCase):
+    def setUp(self):
+        backend.WEB_SEARCH_CACHE.clear()
+
+    def tearDown(self):
+        backend.WEB_SEARCH_CACHE.clear()
+
+    def test_search_web_parses_ddg_lite_html(self):
+        sample_html = (
+            '<html><body>'
+            '<table>'
+            '<tr><td><a class="result-link" href="https://ubports.com">UBports Foundation</a></td></tr>'
+            '<tr><td class="result-snippet">Sample snippet for Ubuntu Touch</td></tr>'
+            '</table>'
+            '</body></html>'
+        ).encode("utf-8")
+
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.read.return_value = sample_html
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(backend, "_urlopen", return_value=mock_resp):
+            results = backend.search_web("ubuntu touch", num_results=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "UBports Foundation")
+        self.assertEqual(results[0]["url"], "https://ubports.com")
+        self.assertIn("Ubuntu Touch", results[0]["snippet"])
+
+    def test_search_web_uses_cached_results(self):
+        sample_html = (
+            '<html><body>'
+            '<a class="result-link" href="https://example.com">Example</a>'
+            '<td class="result-snippet">Test snippet</td>'
+            '</body></html>'
+        ).encode("utf-8")
+
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.read.return_value = sample_html
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(backend, "_urlopen", return_value=mock_resp) as mock_url:
+            first = backend.search_web("cache test", num_results=1)
+            second = backend.search_web("cache test", num_results=1)
+
+        self.assertEqual(first, second)
+        self.assertEqual(mock_url.call_count, 1)
+
+    def test_search_web_handles_network_failure(self):
+        with patch.object(backend, "_urlopen", side_effect=Exception("network down")):
+            results = backend.search_web("fail query")
+
+        self.assertEqual(results, [])
+
+    def test_emit_search_status_sends_transient_event(self):
+        with patch.object(backend, "_send_event") as mock_send:
+            backend._emit_search_status("req-123", "started")
+            mock_send.assert_called_once_with("web_search_status", {
+                "requestId": "req-123",
+                "phase": "started"
+            })
 
 
 if __name__ == "__main__":
