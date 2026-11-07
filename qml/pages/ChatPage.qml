@@ -79,6 +79,28 @@ Page {
         python.call("backend.stop_all_inference", [])
     }
 
+    function buildHistoryContext() {
+        var history = []
+        for (var i = 0; i < messageModel.count; i++) {
+            var item = messageModel.get(i)
+            var txt = (item.text || "").trim()
+            if (item.role === "user") {
+                history.push({ "role": "user", "content": txt })
+            } else if (item.role === "assistant" && txt && !txt.startsWith("Thinking") && !txt.startsWith(i18n.tr("Thinking")) && txt !== "...") {
+                history.push({ "role": "assistant", "content": txt })
+            }
+        }
+        return history
+    }
+
+    function saveAssistantResponse(text) {
+        if (!text) return
+        var clean = text.trim()
+        if (clean && !clean.startsWith("Thinking") && !clean.startsWith(i18n.tr("Thinking")) && clean !== "..." && clean !== "Generation stopped by user.") {
+            python.call("backend.add_chat_message", ["assistant", clean, root.currentSessionId || ""])
+        }
+    }
+
     function stopAndSaveCurrentResponse() {
         if (!isResponding) return;
         if (root.debugMode) {
@@ -88,8 +110,8 @@ Page {
         if (messageModel.count > 0) {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
-            if (lastItem.role === "assistant" && lastItem.text !== "Thinking" && !lastItem.text.startsWith("Thinking") && lastItem.text !== "...") {
-                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
+            if (lastItem.role === "assistant") {
+                saveAssistantResponse(lastItem.text)
             }
         }
         isResponding = false
@@ -189,18 +211,11 @@ Page {
         }
 
         // Save generated assistant response to database
-        if (messageModel.count > 0) {
+        if (messageModel.count > 0 && !userStopped) {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
-            if (lastItem.role === "assistant" &&
-                !userStopped &&
-                lastItem.text !== stoppedText &&
-                lastItem.text !== "Generation stopped by user." &&
-                lastItem.text !== "Thinking" &&
-                !lastItem.text.startsWith("Thinking") &&
-                !lastItem.text.startsWith(i18n.tr("Thinking")) &&
-                lastItem.text !== "...") {
-                python.call("backend.add_chat_message", ["assistant", lastItem.text, root.currentSessionId || ""])
+            if (lastItem.role === "assistant" && lastItem.text !== stoppedText) {
+                saveAssistantResponse(lastItem.text)
             }
         }
 
@@ -229,13 +244,7 @@ Page {
         }
 
         // 3. Build history context
-        var history = []
-        for (var i = 0; i < messageModel.count; i++) {
-            var item = messageModel.get(i)
-            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking") && item.text !== "...")) {
-                history.push({ "role": item.role, "content": item.text })
-            }
-        }
+        var history = buildHistoryContext()
 
         // 4. Start response generation
         messageModel.append({ "role": "assistant", "text": "Thinking" })
@@ -271,14 +280,7 @@ Page {
         }
 
         // Build history array of previous messages to pass as context
-        var history = []
-        for (var i = 0; i < messageModel.count; i++) {
-            var item = messageModel.get(i)
-            // Filter out system warnings or thinking states
-            if (item.role === "user" || (item.role === "assistant" && item.text !== "Thinking" && !item.text.startsWith("Thinking" ) && item.text !== "...")) {
-                history.push({ "role": item.role, "content": item.text })
-            }
-        }
+        var history = buildHistoryContext()
         history.push({ "role": "user", "content": trimmed })
 
         // Save user message to database

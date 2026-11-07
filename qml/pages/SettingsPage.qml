@@ -102,12 +102,20 @@ Page {
         })
     }
 
-    Timer {
-        id: statusTimer
-        interval: 1000
-        repeat: true
-        running: engineStatus === "downloading"
-        onTriggered: refreshEngineStatus()
+    Connections {
+        target: python
+
+        function onReceived(result) {
+            var data = (result && result.length > 0) ? result[0] : null
+            if (!data || !data.event || !data.payload) {
+                return
+            }
+
+            if (data.event === "inference_engine_status") {
+                settingsPage.engineStatus = data.payload.status || ""
+                settingsPage.engineError = data.payload.error || ""
+            }
+        }
     }
 
     function getModelInfo(filename) {

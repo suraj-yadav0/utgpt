@@ -438,12 +438,6 @@ Page {
                 divider.visible: index < modelsList.count - 1
 
                 leadingActions: model.ready ? deleteActions : null
-                trailingActions: {
-                    if (model.ready) return null;
-                    if (model.downloading) return downloadingActions;
-                    if (model.paused) return pausedActions;
-                    return downloadActions;
-                }
 
                 ListItemActions {
                     id: deleteActions
@@ -452,49 +446,6 @@ Page {
                             iconName: "delete"
                             text: i18n.tr("Delete")
                             onTriggered: downloadPage.deleteModel(index)
-                        }
-                    ]
-                }
-
-                ListItemActions {
-                    id: downloadActions
-                    actions: [
-                        Action {
-                            iconSource: root.isDark ? "../../assets/Download-white.svg" : "../../assets/Download.svg"
-                            text: i18n.tr("Download")
-                            onTriggered: downloadPage.startDownload(index)
-                        }
-                    ]
-                }
-
-                ListItemActions {
-                    id: downloadingActions
-                    actions: [
-                        Action {
-                            iconName: "media-playback-pause"
-                            text: i18n.tr("Pause")
-                            onTriggered: downloadPage.pauseDownload(index)
-                        },
-                        Action {
-                            iconName: "cancel"
-                            text: i18n.tr("Cancel")
-                            onTriggered: downloadPage.cancelDownload(index)
-                        }
-                    ]
-                }
-
-                ListItemActions {
-                    id: pausedActions
-                    actions: [
-                        Action {
-                            iconName: "media-playback-start"
-                            text: i18n.tr("Resume")
-                            onTriggered: downloadPage.resumeDownload(index)
-                        },
-                        Action {
-                            iconName: "cancel"
-                            text: i18n.tr("Cancel")
-                            onTriggered: downloadPage.cancelDownload(index)
                         }
                     ]
                 }

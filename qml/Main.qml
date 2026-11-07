@@ -71,16 +71,16 @@ MainView {
     property bool debugMode: false
     property string backendError: ""
     property int currentTabIndex: 0
-    property string selectedModel: appSettings.selectedModel
+    property alias selectedModel: appSettings.selectedModel
     property var availableModels: []
-    property real temperature: appSettings.temperature
-    property int maxTokens: appSettings.maxTokens
-    property int threads: appSettings.threads
-    property int ctxSize: appSettings.ctxSize
-    property string flashAttn: appSettings.flashAttn
-    property string kvCache: appSettings.kvCache
-    property string themeMode: appSettings.themeMode || "system"
-    property bool webSearchEnabled: appSettings.webSearchEnabled
+    property alias temperature: appSettings.temperature
+    property alias maxTokens: appSettings.maxTokens
+    property alias threads: appSettings.threads
+    property alias ctxSize: appSettings.ctxSize
+    property alias flashAttn: appSettings.flashAttn
+    property alias kvCache: appSettings.kvCache
+    property alias themeMode: appSettings.themeMode
+    property alias webSearchEnabled: appSettings.webSearchEnabled
     property string systemThemeName: ""
     property bool sidebarOpen: false
     property var modelCatalog: []
@@ -89,19 +89,7 @@ MainView {
     property string currentVersion: ""
     property var releaseNotesData: null
 
-
-    onSelectedModelChanged: appSettings.selectedModel = selectedModel
-    onTemperatureChanged: appSettings.temperature = temperature
-    onMaxTokensChanged: appSettings.maxTokens = maxTokens
-    onThreadsChanged: appSettings.threads = threads
-    onCtxSizeChanged: appSettings.ctxSize = ctxSize
-    onFlashAttnChanged: appSettings.flashAttn = flashAttn
-    onKvCacheChanged: appSettings.kvCache = kvCache
-    onWebSearchEnabledChanged: appSettings.webSearchEnabled = webSearchEnabled
-    onThemeModeChanged: {
-        appSettings.themeMode = themeMode
-        updateTheme()
-    }
+    onThemeModeChanged: updateTheme()
 
     onWidthChanged: {
         sidebarOpen = (width >= units.gu(60))
@@ -470,7 +458,7 @@ MainView {
         }
     }
 
-    // Semi-transparent overlay to close sidebar on mobile when tapping/swiping outside
+    // Semi-transparent overlay to close sidebar on mobile when tapping outside
     Rectangle {
         id: sidebarOverlay
         anchors.fill: parent
@@ -482,28 +470,6 @@ MainView {
         MouseArea {
             anchors.fill: parent
             onClicked: root.sidebarOpen = false
-
-            // Detect swipe left to close
-            property real startX: 0
-            property bool isDragging: false
-
-            onPressed: {
-                startX = mouse.x
-                isDragging = true
-            }
-
-            onPositionChanged: {
-                if (!isDragging) return
-                var deltaX = mouse.x - startX
-                if (deltaX < -units.gu(4)) {
-                    root.sidebarOpen = false
-                    isDragging = false
-                }
-            }
-
-            onReleased: {
-                isDragging = false
-            }
         }
     }
 
