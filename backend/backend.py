@@ -21,6 +21,8 @@ import signal
 import atexit
 import ctypes
 import ctypes.util
+import json
+import shutil
 from contextlib import contextmanager
 from html.parser import HTMLParser
 
@@ -196,142 +198,26 @@ INFERENCE_LOCK = threading.Lock()
 ACTIVE_PROCESSES = set()
 ACTIVE_TOKENS = set()
 
-DEFAULT_CATALOG = [
-    {
-        "name": "SmolLM2-1.7B",
-        "filename": "smollm2-1.7b-instruct-q4_k_m.gguf",
-        "size": "~1.0 GB",
-        "description": "Fast general chat",
-        "url": "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
-        "developer": "Hugging Face",
-        "context": "8,192 tokens",
-        "maxContext": 8192,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Fast general chat, low resource devices",
-        "promptTemplate": "chatml"
-    },
-    {
-        "name": "Qwen2.5-1.5B",
-        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        "size": "~1.0 GB",
-        "description": "Great multilingual",
-        "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        "developer": "Alibaba Group",
-        "context": "32,768 tokens",
-        "maxContext": 32768,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Excellent multilingual capabilities, coding & reasoning",
-        "promptTemplate": "chatml"
-    },
-    {
-        "name": "DeepSeek-R1-Distill-Qwen-1.5B",
-        "filename": "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
-        "size": "~1.1 GB",
-        "description": "Reasoning assistant (thinking step)",
-        "url": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
-        "developer": "DeepSeek",
-        "context": "32,768 tokens",
-        "maxContext": 32768,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Distilled reasoning model, thinking step visualization, math/logic",
-        "promptTemplate": "chatml"
-    },
-    {
-        "name": "Llama-3.2-1B",
-        "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-        "size": "~800 MB",
-        "description": "Ultra-fast Meta assistant",
-        "url": "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-        "developer": "Meta",
-        "context": "128,000 tokens",
-        "maxContext": 128000,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Ultra-fast assistant, agentic tasks, long contexts",
-        "promptTemplate": "llama3"
-    },
-    {
-        "name": "Llama-3.2-3B",
-        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "size": "~2.0 GB",
-        "description": "Meta's smart assistant",
-        "url": "https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "developer": "Meta",
-        "context": "128,000 tokens",
-        "maxContext": 128000,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Smart general assistant, high quality logic & reasoning",
-        "promptTemplate": "llama3"
-    },
-    {
-        "name": "Gemma-2-2B",
-        "filename": "gemma-2-2b-it-Q4_K_M.gguf",
-        "size": "~1.7 GB",
-        "description": "Google's lightweight assistant",
-        "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-        "developer": "Google",
-        "context": "8,192 tokens",
-        "maxContext": 8192,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Lightweight high-quality chatting, instruction following",
-        "promptTemplate": "gemma"
-    },
-    {
-        "name": "Phi-3-mini-4K",
-        "filename": "Phi-3-mini-4k-instruct-Q4_K_M.gguf",
-        "size": "~2.2 GB",
-        "description": "Microsoft reasoning model",
-        "url": "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf",
-        "developer": "Microsoft",
-        "context": "4,096 tokens",
-        "maxContext": 4096,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Reasoning, logical tasks, math and coding",
-        "promptTemplate": "phi3"
-    },
-    {
-        "name": "Granite-3.0-2B-Instruct",
-        "filename": "granite-3.0-2b-instruct-Q4_K_M.gguf",
-        "size": "~1.3 GB",
-        "description": "IBM's lightweight instruction model",
-        "url": "https://huggingface.co/bartowski/granite-3.0-2b-instruct-GGUF/resolve/main/granite-3.0-2b-instruct-Q4_K_M.gguf",
-        "developer": "IBM",
-        "context": "4,096 tokens",
-        "maxContext": 4096,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Enterprise tasks, translation, coding",
-        "promptTemplate": "llama3"
-    },
-    {
-        "name": "Qwen2.5-0.5B",
-        "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-        "size": "~390 MB",
-        "description": "Ultra-lightweight multilingual assistant",
-        "url": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-        "developer": "Alibaba Group",
-        "context": "32,768 tokens",
-        "maxContext": 32768,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely lightweight, ultra-fast generation, low RAM usage",
-        "promptTemplate": "chatml"
-    },
-    {
-        "name": "TinyLlama-1.1B",
-        "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        "size": "~700 MB",
-        "description": "Fastest, basic",
-        "url": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-        "developer": "TinyLlama Project",
-        "context": "2,048 tokens",
-        "maxContext": 2048,
-        "quant": "Q4_K_M (4-bit)",
-        "usage": "Extremely fast, simple chats on low-spec hardware",
-        "promptTemplate": "zephyr"
-    }
-]
+MODELS_JSON_PATH = os.path.join(APP_DIR, "assets", "models.json")
 
-import json
+
+def _load_default_catalog():
+    if os.path.isfile(MODELS_JSON_PATH):
+        try:
+            with open(MODELS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            log_error("Failed to load models.json: {0}".format(e))
+    return []
+
+
+DEFAULT_CATALOG = _load_default_catalog()
 
 def get_total_ram_gb():
+    try:
+        return (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) / (1024.0 ** 3)
+    except Exception:
+        pass
     try:
         with open("/proc/meminfo", "r") as f:
             for line in f:
@@ -589,9 +475,7 @@ def list_models():
 
 def get_free_storage():
     models_dir = _ensure_models_dir()
-    stats = os.statvfs(models_dir)
-    free_bytes = stats.f_bavail * stats.f_frsize
-    free_gb = free_bytes / float(1024 ** 3)
+    free_gb = shutil.disk_usage(models_dir).free / float(1024 ** 3)
     return "{0:.1f} GB free".format(free_gb)
 
 
@@ -1168,9 +1052,8 @@ def truncate_session_messages(session_id, keep_count):
 def get_model_metadata(model_filename):
     # Try local models.json first
     try:
-        models_json_path = os.path.join(APP_DIR, "assets", "models.json")
-        if os.path.exists(models_json_path):
-            with open(models_json_path, "r") as f:
+        if os.path.exists(MODELS_JSON_PATH):
+            with open(MODELS_JSON_PATH, "r", encoding="utf-8") as f:
                 catalog = json.load(f)
                 for item in catalog:
                     if item.get("filename") == model_filename:
@@ -1340,50 +1223,26 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
     return prompt, boundary
 
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
-    # Support backward compatible dynamic signatures
-    threads = 4
-    ctx_size = 2048
-    flash_attn = "auto"
-    kv_cache = "f16"
-    web_search_enabled = False
-    token_callback = None
-    done_callback = None
-
-    if len(args) == 2:
+    defaults = [4, 2048, "auto", "f16", False, None, None]
+    if len(args) == 2 and (callable(args[0]) or (isinstance(args[0], str) and not str(args[0]).isdigit())):
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled = defaults[:5]
         token_callback, done_callback = args
-    elif len(args) == 5:
-        threads, ctx_size, flash_attn, token_callback, done_callback = args
-    elif len(args) == 6:
-        threads, ctx_size, flash_attn, kv_cache, token_callback, done_callback = args
-    elif len(args) >= 7:
-        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = args[:7]
-    elif len(args) > 0:
-        if not (isinstance(args[0], str) or callable(args[0])):
-            try:
-                threads = int(args[0])
-                if len(args) > 1: ctx_size = int(args[1])
-                if len(args) > 2: flash_attn = str(args[2])
-                if len(args) > 3:
-                    if args[3] in ["f16", "q8_0", "q4_0"]:
-                        kv_cache = str(args[3])
-                        if len(args) > 4:
-                            if isinstance(args[4], bool) or str(args[4]).lower() in ("true", "false", "1", "0"):
-                                web_search_enabled = str(args[4]).lower() in ("true", "1")
-                                if len(args) > 5: token_callback = args[5]
-                                if len(args) > 6: done_callback = args[6]
-                            else:
-                                token_callback = args[4]
-                                if len(args) > 5: done_callback = args[5]
-                    else:
-                        token_callback = args[3]
-                        if len(args) > 4: done_callback = args[4]
-            except Exception:
-                pass
-        else:
-            token_callback = args[0]
-            if len(args) > 1: done_callback = args[1]
+    else:
+        values = list(args) + defaults[len(args):]
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = values[:7]
 
-    web_search_enabled = bool(web_search_enabled)
+    try:
+        threads = int(threads)
+    except (ValueError, TypeError):
+        threads = 4
+    try:
+        ctx_size = int(ctx_size)
+    except (ValueError, TypeError):
+        ctx_size = 2048
+    flash_attn = str(flash_attn or "auto")
+    kv_cache = str(kv_cache or "f16")
+    web_search_enabled = bool(web_search_enabled) and str(web_search_enabled).lower() not in ("false", "0")
+
     log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_enabled))
     
     if isinstance(user_message, list) and len(user_message) > 0:
@@ -1718,18 +1577,8 @@ atexit.register(stop_all_inference)
 
 def import_local_model_thread(file_url, request_id):
     try:
-        import urllib.parse
-        from urllib.request import url2pathname
-
-        if file_url.startswith("file://"):
-            path = file_url[7:]
-            if path.startswith("localhost/"):
-                path = path[9:]
-            if not path.startswith("/"):
-                path = "/" + path
-            source_path = urllib.parse.unquote(path)
-        else:
-            source_path = file_url
+        parsed = urllib.parse.urlparse(file_url)
+        source_path = urllib.request.url2pathname(parsed.path) if parsed.scheme == "file" else file_url
 
         if not os.path.exists(source_path):
             log_error("Import local model failed: source path '{0}' does not exist (original url: '{1}')".format(source_path, file_url))
@@ -1764,8 +1613,6 @@ def import_local_model_thread(file_url, request_id):
             return
 
         total_size = os.path.getsize(source_path)
-        bytes_copied = 0
-        chunk_size = 4 * 1024 * 1024  # 4MB chunks
 
         _send_event("import_start", {
             "requestId": request_id,
@@ -1773,20 +1620,7 @@ def import_local_model_thread(file_url, request_id):
             "totalSize": total_size
         })
 
-        with open(source_path, "rb") as fsrc:
-            with open(dest_path, "wb") as fdst:
-                while True:
-                    chunk = fsrc.read(chunk_size)
-                    if not chunk:
-                        break
-                    fdst.write(chunk)
-                    bytes_copied += len(chunk)
-                    progress = int((bytes_copied / total_size) * 100) if total_size > 0 else 0
-                    _send_event("import_progress", {
-                        "requestId": request_id,
-                        "filename": filename,
-                        "progress": progress
-                    })
+        shutil.copyfile(source_path, dest_path)
 
         # Cleanup if the file is in incoming/temp directory (from Content Hub)
         is_incoming = "incoming" in source_path or "/tmp/" in source_path

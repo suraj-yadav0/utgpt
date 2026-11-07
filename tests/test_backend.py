@@ -592,5 +592,60 @@ class TestSecurityAndStorageGuards(unittest.TestCase):
             self.assertEqual(history[1]["text"], "msg 2")
 
 
+class TestPonytailBackendSimplifications(unittest.TestCase):
+    def test_default_catalog_loaded_from_models_json(self):
+        self.assertIsInstance(backend.DEFAULT_CATALOG, list)
+        self.assertGreater(len(backend.DEFAULT_CATALOG), 0)
+        first_model = backend.DEFAULT_CATALOG[0]
+        self.assertIn("name", first_model)
+        self.assertIn("filename", first_model)
+
+    def test_import_local_model_thread_copies_file_and_emits_events(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source_file = os.path.join(tmp_dir, "custom.gguf")
+            with open(source_file, "wb") as f:
+                f.write(b"model data content")
+
+            models_dir = os.path.join(tmp_dir, "models")
+            os.makedirs(models_dir, exist_ok=True)
+
+            events = []
+            def capture_event(name, payload):
+                events.append((name, payload))
+
+            with patch.object(backend, "MODELS_DIR", models_dir), \
+                 patch.object(backend, "_send_event", side_effect=capture_event):
+                backend.import_local_model_thread("file://" + source_file, "req-test-1")
+
+            dest_file = os.path.join(models_dir, "custom.gguf")
+            self.assertTrue(os.path.isfile(dest_file))
+            with open(dest_file, "rb") as f:
+                self.assertEqual(f.read(), b"model data content")
+
+            event_names = [ev[0] for ev in events]
+            self.assertIn("import_start", event_names)
+            self.assertIn("import_complete", event_names)
+
+    def test_system_metrics(self):
+        ram = backend.get_total_ram_gb()
+        self.assertIsInstance(ram, float)
+        self.assertGreater(ram, 0.0)
+
+        storage = backend.get_free_storage()
+        self.assertIsInstance(storage, str)
+        self.assertTrue(storage.endswith("GB free"))
+
+    def test_run_inference_clean_arg_parsing(self):
+        with patch.object(backend, "log_info") as mock_log, \
+             patch.object(backend, "_ensure_models_dir", return_value="/nonexistent"):
+            backend.run_inference("m.gguf", "hi", 0.7, 256, 8, 4096, "off", "q4_0", True, "tok_cb", "done_cb")
+            matching = [call[0][0] for call in mock_log.call_args_list if "Entering run_inference" in call[0][0]]
+            self.assertEqual(len(matching), 1)
+            self.assertIn("threads=8", matching[0])
+            self.assertIn("ctx_size=4096", matching[0])
+            self.assertIn("flash_attn=off", matching[0])
+            self.assertIn("web_search=True", matching[0])
+
+
 if __name__ == "__main__":
     unittest.main()
