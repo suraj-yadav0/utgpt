@@ -94,6 +94,16 @@ class ChatPageSimplificationsTestCase(unittest.TestCase):
         self.assertIn("saveAssistantResponse(lastItem.text)", self.text)
         self.assertIn("var history = buildHistoryContext()", self.text)
 
+    def test_sources_chip_flow_present(self):
+        self.assertIn("id: sourcesContainer", self.text)
+        self.assertIn("parsedSources", self.text)
+        self.assertIn("Qt.openUrlExternally(modelData.url)", self.text)
+
+    def test_web_search_status_dynamic_binding(self):
+        self.assertIn("property string webSearchStatusText", self.text)
+        self.assertIn("text: chatPage.webSearchStatusText", self.text)
+        self.assertIn("chatPage.activeSources = data.payload.sources", self.text)
+
 
 class SettingsPageSimplificationsTestCase(unittest.TestCase):
     @classmethod

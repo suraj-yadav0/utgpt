@@ -49,6 +49,8 @@ Page {
     property string kvCache: "f16"
     property bool webSearchEnabled: false
     property bool webSearchActive: false
+    property string webSearchStatusText: i18n.tr("Searching the web for latest info...")
+    property var activeSources: []
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
@@ -65,7 +67,7 @@ Page {
             messageModel.clear()
             if (result && result.length > 0) {
                 for (var i = 0; i < result.length; i++) {
-                    messageModel.append({ "role": result[i].role, "text": result[i].text })
+                    messageModel.append({ "role": result[i].role, "text": result[i].text, "sources": result[i].sources || "" })
                 }
             }
             scrollToBottom()
@@ -97,7 +99,11 @@ Page {
         if (!text) return
         var clean = text.trim()
         if (clean && !clean.startsWith("Thinking") && !clean.startsWith(i18n.tr("Thinking")) && clean !== "..." && clean !== "Generation stopped by user.") {
-            python.call("backend.add_chat_message", ["assistant", clean, root.currentSessionId || ""])
+            var sourcesJson = (activeSources && activeSources.length > 0) ? JSON.stringify(activeSources) : ""
+            if (arguments.length > 1 && arguments[1]) {
+                sourcesJson = arguments[1]
+            }
+            python.call("backend.add_chat_message", ["assistant", clean, root.currentSessionId || "", sourcesJson])
         }
     }
 
@@ -111,6 +117,9 @@ Page {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
             if (lastItem.role === "assistant") {
+                if (activeSources && activeSources.length > 0) {
+                    messageModel.setProperty(lastIndex, "sources", JSON.stringify(activeSources))
+                }
                 saveAssistantResponse(lastItem.text)
             }
         }
@@ -118,6 +127,7 @@ Page {
         pendingRequestId = ""
         userStopped = false
         webSearchActive = false
+        activeSources = []
     }
 
     function startNewChat() {
@@ -126,6 +136,7 @@ Page {
         isResponding = false
         pendingRequestId = ""
         webSearchActive = false
+        activeSources = []
     }
 
     function clearHistory() {
@@ -134,6 +145,7 @@ Page {
         isResponding = false
         pendingRequestId = ""
         webSearchActive = false
+        activeSources = []
         python.call("backend.clear_chat_history", [], function() {
             root.currentSessionId = null
             root.refreshSessions()
@@ -215,10 +227,14 @@ Page {
             var lastIndex = messageModel.count - 1
             var lastItem = messageModel.get(lastIndex)
             if (lastItem.role === "assistant" && lastItem.text !== stoppedText) {
+                if (activeSources && activeSources.length > 0) {
+                    messageModel.setProperty(lastIndex, "sources", JSON.stringify(activeSources))
+                }
                 saveAssistantResponse(lastItem.text)
             }
         }
 
+        activeSources = []
         userStopped = false
     }
 
@@ -228,7 +244,7 @@ Page {
         if (messageModel.get(idx).role !== "user") return;
 
         if (!model) {
-            messageModel.append({ "role": "assistant", "text": i18n.tr("Select a model in Settings before chatting.") })
+            messageModel.append({ "role": "assistant", "text": i18n.tr("Select a model in Settings before chatting."), "sources": "" })
             scrollToBottom()
             return
         }
@@ -247,7 +263,9 @@ Page {
         var history = buildHistoryContext()
 
         // 4. Start response generation
-        messageModel.append({ "role": "assistant", "text": "Thinking" })
+        activeSources = []
+        webSearchStatusText = i18n.tr("Searching the web for latest info...")
+        messageModel.append({ "role": "assistant", "text": "Thinking", "sources": "" })
         isResponding = true
         pendingRequestId = "chat-" + Date.now()
         scrollToBottom()
@@ -273,7 +291,7 @@ Page {
         }
 
         if (!model) {
-            messageModel.append({ "role": "assistant", "text": "Select a model in Settings before chatting." })
+            messageModel.append({ "role": "assistant", "text": "Select a model in Settings before chatting.", "sources": "" })
             composer.text = ""
             scrollToBottom()
             return
@@ -291,8 +309,10 @@ Page {
             }
         })
 
-        messageModel.append({ "role": "user", "text": trimmed })
-        messageModel.append({ "role": "assistant", "text": "Thinking" })
+        activeSources = []
+        webSearchStatusText = i18n.tr("Searching the web for latest info...")
+        messageModel.append({ "role": "user", "text": trimmed, "sources": "" })
+        messageModel.append({ "role": "assistant", "text": "Thinking", "sources": "" })
         composer.text = ""
         isResponding = true
         pendingRequestId = "chat-" + Date.now()
@@ -341,7 +361,18 @@ Page {
             if (data.event === "inference_token") {
                 chatPage.appendAssistantText(data.payload.text)
             } else if (data.event === "web_search_status") {
-                chatPage.webSearchActive = (data.payload.phase === "started")
+                if (data.payload.phase === "started") {
+                    chatPage.webSearchActive = true
+                    var q = data.payload.query || ""
+                    chatPage.webSearchStatusText = q ? (i18n.tr("Searching: \"") + q + "\"...") : i18n.tr("Searching the web for latest info...")
+                } else if (data.payload.phase === "found") {
+                    var count = data.payload.count || 0
+                    chatPage.webSearchStatusText = i18n.tr("Found ") + count + i18n.tr(" sources, generating response...")
+                } else if (data.payload.phase === "finished") {
+                    chatPage.webSearchActive = false
+                }
+            } else if (data.event === "web_search_sources") {
+                chatPage.activeSources = data.payload.sources || []
             } else if (data.event === "inference_done") {
                 chatPage.webSearchActive = false
                 chatPage.finishResponse(data.payload.ok, data.payload.error)
@@ -620,6 +651,73 @@ Page {
                         }
                     }
 
+                    // Web Search Sources Chips
+                    Flow {
+                        id: sourcesContainer
+                        width: Math.min(messageText.implicitWidth + units.gu(3.5), messageList.width * 0.76)
+                        spacing: units.gu(0.8)
+                        visible: model.role === "assistant" && model.sources && model.sources !== "" && model.sources !== "[]"
+
+                        property var parsedSources: {
+                            if (!model.sources) return []
+                            try {
+                                var res = JSON.parse(model.sources)
+                                return Array.isArray(res) ? res : []
+                            } catch (e) {
+                                return []
+                            }
+                        }
+
+                        Repeater {
+                            model: sourcesContainer.parsedSources
+
+                            Rectangle {
+                                height: units.gu(3.2)
+                                width: Math.min(chipRow.implicitWidth + units.gu(1.6), sourcesContainer.width)
+                                radius: units.gu(0.8)
+                                color: chipMouse.pressed ? (root.isDark ? "#2C3E3B" : "#D4F5EC") : (root.isDark ? "#1E2D2A" : "#E6FFFA")
+                                border.color: "#319795"
+                                border.width: 1
+
+                                RowLayout {
+                                    id: chipRow
+                                    anchors.fill: parent
+                                    anchors.leftMargin: units.gu(0.8)
+                                    anchors.rightMargin: units.gu(0.8)
+                                    spacing: units.gu(0.5)
+
+                                    Icon {
+                                        name: "stock_website"
+                                        width: units.gu(1.5)
+                                        height: units.gu(1.5)
+                                        color: "#319795"
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+
+                                    Label {
+                                        text: modelData.title || modelData.url || ""
+                                        color: root.isDark ? "#4FD1C5" : "#234E52"
+                                        fontSize: "x-small"
+                                        font.bold: true
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignVCenter
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: chipMouse
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        if (modelData.url) {
+                                            Qt.openUrlExternally(modelData.url)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Copy action button
                     RowLayout {
                         visible: model.role === "assistant" && model.text !== "Thinking" && !model.text.startsWith("Thinking") && model.text !== "..."
@@ -745,7 +843,7 @@ Page {
                 }
 
                 Label {
-                    text: i18n.tr("Searching the web for latest info...")
+                    text: chatPage.webSearchStatusText
                     color: "#319795"
                     fontSize: "small"
                     font.italic: true

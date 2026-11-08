@@ -23,6 +23,7 @@ import ctypes
 import ctypes.util
 import json
 import shutil
+import re
 from contextlib import contextmanager
 from html.parser import HTMLParser
 
@@ -404,13 +405,35 @@ def _emit_token(callback_ref, text):
         })
 
 
-def _emit_search_status(callback_ref, phase):
+def clean_search_query(query):
+    if not query:
+        return ""
+    q = query.strip()
+    patterns = [
+        r"^(please\s+)?(can|could|would)\s+you\s+(please\s+)?(tell\s+me(\s+about)?|check(\s+for)?|search(\s+the\s+web)?(\s+for)?|find(\s+out)?|look\s+up)\s+",
+        r"^(please\s+)?(tell\s+me(\s+about)?|search(\s+the\s+web)?(\s+for)?|look\s+up|find)\s+",
+        r"^(hey\s+|hi\s+|hello\s+)?(can\s+you\s+)?(what\s+is|what\s+are|who\s+is|where\s+is)\s+",
+    ]
+    for p in patterns:
+        q = re.sub(p, "", q, flags=re.IGNORECASE).strip()
+    q = re.sub(r"[?!.]+$", "", q).strip()
+    return q if len(q) >= 2 else query.strip()
+
+
+def _emit_search_status(callback_ref, phase, query="", count=0, sources=None):
     # Transient UI status only (never part of the chat text).
     if callback_ref and not callable(callback_ref):
-        _send_event("web_search_status", {
+        payload = {
             "requestId": str(callback_ref),
             "phase": phase
-        })
+        }
+        if query:
+            payload["query"] = query
+        if count:
+            payload["count"] = count
+        if sources is not None:
+            payload["sources"] = sources
+        _send_event("web_search_status", payload)
 
 
 def _emit_done(callback_ref, ok=True, error_message=""):
@@ -934,7 +957,8 @@ def init_db():
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         role TEXT NOT NULL,
                         text TEXT NOT NULL,
-                        timestamp REAL NOT NULL
+                        timestamp REAL NOT NULL,
+                        sources TEXT DEFAULT ''
                     )
                 """)
 
@@ -943,6 +967,11 @@ def init_db():
                 if 'session_id' not in columns:
                     try:
                         cursor.execute("ALTER TABLE messages ADD COLUMN session_id INTEGER")
+                    except sqlite3.OperationalError:
+                        pass
+                if 'sources' not in columns:
+                    try:
+                        cursor.execute("ALTER TABLE messages ADD COLUMN sources TEXT DEFAULT ''")
                     except sqlite3.OperationalError:
                         pass
 
@@ -999,11 +1028,11 @@ def load_chat_history(session_id=None):
                 return []
             session_id = row[0]
 
-        cursor.execute("SELECT role, text FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+        cursor.execute("SELECT role, text, sources FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
         rows = cursor.fetchall()
-        return [{"role": r, "text": t} for r, t in rows]
+        return [{"role": r, "text": t, "sources": s or ""} for r, t, s in rows]
 
-def add_chat_message(role, text, session_id=None):
+def add_chat_message(role, text, session_id=None, sources=""):
     with _get_db_context() as conn:
         cursor = conn.cursor()
         if not session_id:
@@ -1017,8 +1046,8 @@ def add_chat_message(role, text, session_id=None):
             cursor.execute("INSERT INTO sessions (title, created_at) VALUES (?, ?)", (title, time.time()))
             session_id = cursor.lastrowid
 
-        cursor.execute("INSERT INTO messages (session_id, role, text, timestamp) VALUES (?, ?, ?, ?)", 
-                       (session_id, role, text, time.time()))
+        cursor.execute("INSERT INTO messages (session_id, role, text, timestamp, sources) VALUES (?, ?, ?, ?, ?)", 
+                       (session_id, role, text, time.time(), sources or ""))
         return session_id
 
 def clear_chat_history():
@@ -1281,17 +1310,28 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
 
             web_context_msgs = []
             if web_search_enabled:
-                log_info("Performing web search for query: {0}".format(current_query))
-                _emit_search_status(token_callback, "started")
+                search_query = clean_search_query(current_query)
+                log_info("Performing web search for query: {0} (raw: {1})".format(search_query, current_query))
+                _emit_search_status(token_callback, "started", query=search_query)
                 try:
-                    search_results = search_web(current_query, num_results=3)
+                    search_results = search_web(search_query, num_results=3)
                     if search_results:
-                        formatted_web = "Web Search Results (Current Real-time Info):\n"
+                        sources = [{"title": res.get("title", ""), "url": res.get("url", "")} for res in search_results]
+                        _emit_search_status(token_callback, "found", query=search_query, count=len(sources), sources=sources)
+                        if token_callback and not callable(token_callback):
+                            _send_event("web_search_sources", {
+                                "requestId": str(token_callback),
+                                "sources": sources
+                            })
+                        formatted_web = (
+                            "Real-time Web Search Results:\n"
+                            "Answer the user query accurately using these search results where relevant.\n\n"
+                        )
                         for idx, res in enumerate(search_results, 1):
                             title = res.get('title', '')
                             snippet = res.get('snippet', '')
                             url = res.get('url', '')
-                            formatted_web += f"{idx}. Title: {title}\n   Snippet: {snippet}\n   Source: {url}\n"
+                            formatted_web += f"[{idx}] Title: {title}\n    Snippet: {snippet}\n    Source: {url}\n\n"
                         web_context_msgs = [{"role": "system", "text": formatted_web}]
                     else:
                         log_info("Web search returned no results, relying on model knowledge.")

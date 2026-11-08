@@ -22,6 +22,8 @@ import os
 import sys
 import tempfile
 import shutil
+import io
+import threading
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -732,6 +734,89 @@ class TestPonytailBackendSimplifications(unittest.TestCase):
         combined = "".join(tokens)
         self.assertIn("Hello world from UTGPT!", combined)
         self.assertNotIn("[end of text]", combined)
+
+    def test_clean_search_query(self):
+        self.assertEqual(backend.clean_search_query("Can you please search for Ubuntu Touch 24.04?"), "Ubuntu Touch 24.04")
+        self.assertEqual(backend.clean_search_query("Hey what is the price of Bitcoin today?"), "the price of Bitcoin today")
+        self.assertEqual(backend.clean_search_query("Tell me about quantum computing..."), "quantum computing")
+        self.assertEqual(backend.clean_search_query("AI"), "AI")
+        self.assertEqual(backend.clean_search_query(""), "")
+
+    def test_emit_search_status_rich_payload(self):
+        with patch.object(backend, "_send_event") as mock_send:
+            sources = [{"title": "UBports", "url": "https://ubports.com"}]
+            backend._emit_search_status("req-456", "found", query="ubuntu touch", count=1, sources=sources)
+            mock_send.assert_called_once_with("web_search_status", {
+                "requestId": "req-456",
+                "phase": "found",
+                "query": "ubuntu touch",
+                "count": 1,
+                "sources": sources
+            })
+
+    def test_add_and_load_chat_message_with_sources(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_file = os.path.join(tmp_dir, "test_sources.db")
+            with patch.object(backend, "DB_PATH", db_file):
+                backend.DB_INITIALIZED = False
+                sources_json = '[{"title": "Doc", "url": "https://example.com"}]'
+                sess_id = backend.add_chat_message("user", "Hello", "session-1")
+                backend.add_chat_message("assistant", "Found answer", sess_id, sources=sources_json)
+
+                history = backend.load_chat_history(sess_id)
+                self.assertEqual(len(history), 2)
+                self.assertEqual(history[0]["role"], "user")
+                self.assertEqual(history[0]["sources"], "")
+                self.assertEqual(history[1]["role"], "assistant")
+                self.assertEqual(history[1]["sources"], sources_json)
+
+    def test_run_inference_web_search_grounding_and_sources(self):
+        events = []
+        fake_stdout = io.StringIO("Response with grounded info.")
+        mock_proc = MagicMock()
+        mock_proc.stdout = fake_stdout
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "model.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake")
+
+            sample_search = [{"title": "UBports News", "snippet": "New release available", "url": "https://ubports.com"}]
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend, "search_web", return_value=sample_search), \
+                 patch.object(backend, "_send_event", side_effect=lambda ev, payload: events.append((ev, payload))), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc):
+
+                done_ev = threading.Event()
+                backend.run_inference(
+                    "model.gguf",
+                    "Can you search for the latest ubuntu touch release?",
+                    0.7,
+                    50,
+                    4,
+                    2048,
+                    "off",
+                    "f16",
+                    True,
+                    "req-web-1",
+                    lambda ok, err: done_ev.set()
+                )
+                self.assertTrue(done_ev.wait(timeout=3.0))
+
+            ev_types = [ev[0] for ev in events]
+            self.assertIn("web_search_status", ev_types)
+            self.assertIn("web_search_sources", ev_types)
+            sources_event = next(payload for ev, payload in events if ev == "web_search_sources")
+            self.assertEqual(sources_event["sources"], [{"title": "UBports News", "url": "https://ubports.com"}])
 
 
 if __name__ == "__main__":
