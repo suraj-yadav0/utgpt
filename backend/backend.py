@@ -107,7 +107,7 @@ class DDGLiteParser(HTMLParser):
 
 WEB_SEARCH_CACHE = {}
 WEB_SEARCH_CACHE_TTL = 1800.0
-WEB_SEARCH_TIMEOUT = 8
+WEB_SEARCH_TIMEOUT = 3.5
 WEB_SEARCH_CACHE_LOCK = threading.Lock()
 
 
@@ -159,6 +159,7 @@ except ImportError:  # pragma: no cover - only unavailable outside the app runti
 
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 MODELS_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/models")
+PROMPT_CACHE_DIR = os.path.expanduser("~/.local/share/utgpt.surajyadav/prompt_cache")
 LLAMA_CLI_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-cli")
 LLAMA_CLI_PATH_WRITABLE = os.path.join(MODELS_DIR, "llama-cli")
 LLAMA_COMPLETION_PATH_BUNDLED = os.path.join(APP_DIR, "assets", "llama-completion")
@@ -346,6 +347,62 @@ def _bg_fetch_catalog(ram_gb):
 def _ensure_models_dir():
     os.makedirs(MODELS_DIR, exist_ok=True)
     return MODELS_DIR
+
+
+def _ensure_prompt_cache_dir():
+    if not os.path.exists(PROMPT_CACHE_DIR):
+        try:
+            os.makedirs(PROMPT_CACHE_DIR, exist_ok=True)
+        except OSError:
+            pass
+    return PROMPT_CACHE_DIR
+
+
+def _clear_session_prompt_cache(session_id):
+    if not session_id:
+        return
+    try:
+        cache_dir = _ensure_prompt_cache_dir()
+        safe_session = re.sub(r'[^a-zA-Z0-9_-]', '_', str(session_id))
+        prefix = "{0}_".format(safe_session)
+        for name in os.listdir(cache_dir):
+            if name.startswith(prefix) and name.endswith(".bin"):
+                try:
+                    os.remove(os.path.join(cache_dir, name))
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
+def _clear_all_prompt_cache():
+    try:
+        cache_dir = _ensure_prompt_cache_dir()
+        for name in os.listdir(cache_dir):
+            if name.endswith(".bin"):
+                try:
+                    os.remove(os.path.join(cache_dir, name))
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
+def _clear_model_prompt_cache(model_filename):
+    if not model_filename:
+        return
+    try:
+        cache_dir = _ensure_prompt_cache_dir()
+        safe_model = re.sub(r'[^a-zA-Z0-9_-]', '_', os.path.splitext(os.path.basename(model_filename))[0])
+        suffix = "_{0}.bin".format(safe_model)
+        for name in os.listdir(cache_dir):
+            if name.endswith(suffix):
+                try:
+                    os.remove(os.path.join(cache_dir, name))
+                except OSError:
+                    pass
+    except Exception:
+        pass
 
 
 def _send_event(event_name, payload):
@@ -910,6 +967,7 @@ def get_inference_engine_status():
 def delete_model(filename):
     if not filename:
         return False
+    _clear_model_prompt_cache(filename)
     models_dir = os.path.realpath(_ensure_models_dir())
     clean_name = os.path.basename(filename)
     if not clean_name or clean_name in (".", ".."):
@@ -1032,6 +1090,7 @@ def get_latest_session_id():
 def delete_session(session_id):
     if not session_id:
         return False
+    _clear_session_prompt_cache(session_id)
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
@@ -1079,6 +1138,7 @@ def add_chat_message(role, text, session_id=None, sources=""):
         return session_id
 
 def clear_chat_history():
+    _clear_all_prompt_cache()
     with _get_db_context() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM messages")
@@ -1088,6 +1148,7 @@ def clear_chat_history():
 def truncate_session_messages(session_id, keep_count):
     if not session_id:
         return False
+    _clear_session_prompt_cache(session_id)
     keep_count = max(0, int(keep_count))
     with _get_db_context() as conn:
         cursor = conn.cursor()
@@ -1271,13 +1332,17 @@ def get_prompt_and_boundary(model_filename, current_query, recent_history, conte
     return prompt, boundary
 
 def run_inference(model_filename, user_message, temperature, max_tokens, *args):
-    defaults = [4, 2048, "auto", "f16", False, None, None]
+    defaults = [4, 2048, "auto", "f16", False, None, None, ""]
     if len(args) == 2 and (callable(args[0]) or (isinstance(args[0], str) and not str(args[0]).isdigit())):
         threads, ctx_size, flash_attn, kv_cache, web_search_enabled = defaults[:5]
         token_callback, done_callback = args
+        session_id = defaults[7]
+    elif len(args) == 3 and (callable(args[0]) or (isinstance(args[0], str) and not str(args[0]).isdigit())):
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled = defaults[:5]
+        token_callback, done_callback, session_id = args
     else:
         values = list(args) + defaults[len(args):]
-        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback = values[:7]
+        threads, ctx_size, flash_attn, kv_cache, web_search_enabled, token_callback, done_callback, session_id = values[:8]
 
     try:
         threads = int(threads)
@@ -1287,6 +1352,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         ctx_size = int(ctx_size)
     except (ValueError, TypeError):
         ctx_size = 2048
+    session_id = str(session_id or "").strip()
+    if session_id in ("null", "undefined"):
+        session_id = ""
     flash_attn = str(flash_attn or "auto")
     kv_cache = str(kv_cache or "f16")
     web_search_val = web_search_enabled
@@ -1298,7 +1366,8 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
     else:
         web_search_mode = "off"
 
-    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_val))
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}, session_id={5}".format(
+        model_filename, threads, ctx_size, flash_attn, web_search_val, session_id or "none"))
     
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
@@ -1424,16 +1493,32 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
             elif template_type == "default":
                 stop_tokens = ["\nUser:", "\nAssistant:", "\nSystem:"]
 
+            batch_size = min(512, max(32, ctx_size))
+            ubatch_size = min(256, batch_size)
             additional_args = [
                 "-t", str(int(threads)),
                 "-tb", str(int(threads)),
                 "-c", str(int(ctx_size)),
+                "-b", str(batch_size),
+                "-ub", str(ubatch_size),
                 "-fa", str(flash_attn)
             ]
             if kv_cache in ["q8_0", "q4_0"]:
                 additional_args.extend(["-ctk", kv_cache, "-ctv", kv_cache])
             for token in stop_tokens:
                 additional_args.extend(["-r", token])
+
+            if is_completion and session_id:
+                cache_dir = _ensure_prompt_cache_dir()
+                safe_session = re.sub(r'[^a-zA-Z0-9_-]', '_', str(session_id))
+                safe_model = re.sub(r'[^a-zA-Z0-9_-]', '_', os.path.splitext(os.path.basename(model_filename))[0])
+                cache_file = os.path.join(cache_dir, "{0}_{1}.bin".format(safe_session, safe_model))
+                if os.path.exists(cache_file) and os.path.getsize(cache_file) == 0:
+                    try:
+                        os.remove(cache_file)
+                    except OSError:
+                        pass
+                additional_args.extend(["--prompt-cache", cache_file, "--prompt-cache-all"])
             
             if is_completion:
                 args = [
@@ -1523,7 +1608,13 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                             continue
                         has_emitted_content = True
                     chunk_buffer += safe_char
-                    if safe_char in (" ", "\n", "\t") or len(chunk_buffer) >= 12:
+                    should_emit = (
+                        len(chunk_buffer) >= 20 or
+                        safe_char in ("\n", "\r") or
+                        (safe_char in (".", "!", "?", ":", ";") and len(chunk_buffer) >= 6) or
+                        (safe_char in (" ", "\t") and len(chunk_buffer) >= 12)
+                    )
+                    if should_emit:
                         _emit_token(token_callback, chunk_buffer)
                         chunk_buffer = ""
 

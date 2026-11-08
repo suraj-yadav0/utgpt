@@ -878,6 +878,157 @@ class TestPonytailBackendSimplifications(unittest.TestCase):
                 ev_types = [ev[0] for ev in events]
                 self.assertNotIn("web_search_status", ev_types)
 
+    def test_web_search_timeout_ceiling(self):
+        self.assertEqual(backend.WEB_SEARCH_TIMEOUT, 3.5)
+
+    def test_run_inference_batch_size_tuning(self):
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.StringIO("Batch test output.")
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "m.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake")
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc) as mock_popen:
+
+                done_ev = threading.Event()
+                backend.run_inference(
+                    "m.gguf", "Hi", 0.7, 50,
+                    4, 2048, "off", "f16", "off",
+                    "req-batch-1", lambda ok, err: done_ev.set()
+                )
+                self.assertTrue(done_ev.wait(timeout=3.0))
+                cmd = mock_popen.call_args[0][0]
+                self.assertIn("-b", cmd)
+                self.assertEqual(cmd[cmd.index("-b") + 1], "512")
+                self.assertIn("-ub", cmd)
+                self.assertEqual(cmd[cmd.index("-ub") + 1], "256")
+
+    def test_run_inference_prompt_caching(self):
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.StringIO("Cached prompt output.")
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "test-model.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake")
+            cache_dir = os.path.join(tmp_dir, "prompt_cache")
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend, "PROMPT_CACHE_DIR", cache_dir), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc) as mock_popen:
+
+                done_ev = threading.Event()
+                backend.run_inference(
+                    "test-model.gguf", "Hello", 0.7, 50,
+                    4, 2048, "off", "f16", "off",
+                    "req-cache-1", lambda ok, err: done_ev.set(), "session-42"
+                )
+                self.assertTrue(done_ev.wait(timeout=3.0))
+                cmd = mock_popen.call_args[0][0]
+                self.assertIn("--prompt-cache", cmd)
+                expected_cache = os.path.join(cache_dir, "session-42_test-model.bin")
+                self.assertEqual(cmd[cmd.index("--prompt-cache") + 1], expected_cache)
+                self.assertIn("--prompt-cache-all", cmd)
+
+    def test_prompt_cache_lifecycle_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = os.path.join(tmp_dir, "prompt_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            db_file = os.path.join(tmp_dir, "test_cache.db")
+
+            with patch.object(backend, "PROMPT_CACHE_DIR", cache_dir), \
+                 patch.object(backend, "DB_PATH", db_file), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir):
+
+                backend.DB_INITIALIZED = False
+                sess1_file = os.path.join(cache_dir, "10_qwen.bin")
+                sess2_file = os.path.join(cache_dir, "20_qwen.bin")
+                sess1_other_file = os.path.join(cache_dir, "10_llama.bin")
+
+                with open(sess1_file, "w") as f:
+                    f.write("cache1")
+                with open(sess2_file, "w") as f:
+                    f.write("cache2")
+                with open(sess1_other_file, "w") as f:
+                    f.write("cache3")
+
+                # delete_session(10) removes all cache files prefixed with 10_
+                backend.delete_session("10")
+                self.assertFalse(os.path.exists(sess1_file))
+                self.assertFalse(os.path.exists(sess1_other_file))
+                self.assertTrue(os.path.exists(sess2_file))
+
+                # truncate_session_messages removes cache files for that session
+                backend.truncate_session_messages("20", 1)
+                self.assertFalse(os.path.exists(sess2_file))
+
+                # clear_chat_history removes all prompt cache files
+                new_cache = os.path.join(cache_dir, "30_gemma.bin")
+                with open(new_cache, "w") as f:
+                    f.write("cache4")
+                self.assertTrue(os.path.exists(new_cache))
+                backend.clear_chat_history()
+                self.assertFalse(os.path.exists(new_cache))
+
+                # delete_model removes cache files suffix-matching that model
+                model_cache = os.path.join(cache_dir, "50_phi3.bin")
+                with open(model_cache, "w") as f:
+                    f.write("cache5")
+                backend.delete_model("phi3.gguf")
+                self.assertFalse(os.path.exists(model_cache))
+
+    def test_stdout_reader_chunk_buffering_integrity(self):
+        full_text = "Hello world!\nThis is an extended response sentence to test chunk buffering logic accurately."
+        mock_proc = MagicMock()
+        mock_proc.stdout = io.StringIO(full_text)
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "m.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake")
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc):
+
+                received_tokens = []
+                done_ev = threading.Event()
+                backend.run_inference(
+                    "m.gguf", "Hi", 0.7, 50,
+                    4, 2048, "off", "f16", "off",
+                    lambda t: received_tokens.append(t),
+                    lambda ok, err: done_ev.set()
+                )
+                self.assertTrue(done_ev.wait(timeout=3.0))
+                self.assertEqual("".join(received_tokens), full_text)
+                self.assertTrue(len(received_tokens) > 1)
+
 
 if __name__ == "__main__":
     unittest.main()

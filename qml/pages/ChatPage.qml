@@ -284,7 +284,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId, root.currentSessionId || ""],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -313,14 +313,6 @@ Page {
         var history = buildHistoryContext()
         history.push({ "role": "user", "content": trimmed })
 
-        // Save user message to database
-        python.call("backend.add_chat_message", ["user", trimmed, root.currentSessionId || ""], function(newSessionId) {
-            if (newSessionId && root.currentSessionId !== newSessionId) {
-                root.currentSessionId = newSessionId
-                root.refreshSessions()
-            }
-        })
-
         activeSources = []
         webSearchStatusText = i18n.tr("Searching the web for latest info...")
         messageModel.append({ "role": "user", "text": trimmed, "sources": "" })
@@ -330,18 +322,25 @@ Page {
         pendingRequestId = "chat-" + Date.now()
         scrollToBottom()
 
-        python.call(
-            "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId],
-            function(result) {
-                if (result === false && isResponding) {
-                    var lastIndex = messageModel.count - 1
-                    if (lastIndex >= 0 && (messageModel.get(lastIndex).text === "..." || messageModel.get(lastIndex).text.startsWith("Thinking"))) {
-                        finishResponse(false, "Unable to start inference.")
+        // Save user message to database, ensuring session ID exists for prompt caching
+        python.call("backend.add_chat_message", ["user", trimmed, root.currentSessionId || ""], function(newSessionId) {
+            if (newSessionId && root.currentSessionId !== newSessionId) {
+                root.currentSessionId = newSessionId
+                root.refreshSessions()
+            }
+            python.call(
+                "backend.run_inference",
+                [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId, root.currentSessionId || newSessionId || ""],
+                function(result) {
+                    if (result === false && isResponding) {
+                        var lastIndex = messageModel.count - 1
+                        if (lastIndex >= 0 && (messageModel.get(lastIndex).text === "..." || messageModel.get(lastIndex).text.startsWith("Thinking"))) {
+                            finishResponse(false, "Unable to start inference.")
+                        }
                     }
                 }
-            }
-        )
+            )
+        })
     }
 
     ListModel {
