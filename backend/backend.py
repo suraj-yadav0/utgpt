@@ -111,10 +111,114 @@ WEB_SEARCH_TIMEOUT = 3.5
 WEB_SEARCH_CACHE_LOCK = threading.Lock()
 
 
+def extract_weather_location(query):
+    """
+    Extracts a city or location name from a weather inquiry if present.
+    Returns the cleaned location string or None if not a location-specific weather query.
+    """
+    if not query:
+        return None
+    q = query.strip()
+    q_clean = re.sub(r'[\?\.!,]+$', '', q).strip()
+
+    q_clean = re.sub(
+        r'^(please\s+)?(can|could|would)\s+you\s+(please\s+)?(tell\s+me(\s+about)?|check(\s+for)?|give\s+me|find(\s+out)?|look\s+up)\s+',
+        '', q_clean, flags=re.IGNORECASE
+    ).strip()
+    q_clean = re.sub(
+        r'^(please\s+)?(tell\s+me(\s+about)?|check(\s+for)?|give\s+me|look\s+up|find)\s+',
+        '', q_clean, flags=re.IGNORECASE
+    ).strip()
+
+    patterns = [
+        r'^(?:what(?:\'s| is)\s+(?:the\s+)?|the\s+)?(?:current\s+)?(?:weather|temperature|forecast|conditions?)(?:\s+(?:forecast|report|info))?\s+(?:in|for|at|of)\s+([a-zA-Z\s\.\,\-]+?)(?:\s+(?:today|tomorrow|this week|right now|currently|tonight))?$',
+        r'^(?:how(?:\'s| is)\s+(?:the\s+)?)?(?:weather|temperature)\s+(?:in|for|at|of)\s+([a-zA-Z\s\.\,\-]+?)(?:\s+(?:today|tomorrow|this week|right now|currently|tonight))?$',
+        r'^(?:is it\s+(?:raining|snowing|sunny|cloudy|hot|cold)\s+in)\s+([a-zA-Z\s\.\,\-]+?)(?:\s+(?:today|tomorrow|now|right now))?$',
+        r'^weather\s+(?:in|for|at|of\s+)?([a-zA-Z\s\.\,\-]+?)(?:\s+(?:today|tomorrow|this week|right now|currently|tonight))?$',
+        r'^temperature\s+(?:in|for|at|of)\s+([a-zA-Z\s\.\,\-]+?)(?:\s+(?:today|tomorrow|now|right now))?$',
+    ]
+    for p in patterns:
+        m = re.search(p, q_clean, re.IGNORECASE)
+        if m:
+            loc = m.group(1).strip()
+            loc = re.sub(r'\b(today|tomorrow|tonight|now|right now|currently|this week)\b', '', loc, flags=re.IGNORECASE).strip()
+            if loc.lower() in ('a place', 'my area', 'here', 'there', 'the world', 'place'):
+                return None
+            if loc and len(loc) >= 2:
+                return loc
+    return None
+
+
+def fetch_weather(location, timeout=WEB_SEARCH_TIMEOUT):
+    """
+    Fetches real-time weather data for a location using wttr.in JSON API.
+    Returns a structured weather search result dict or None if unavailable.
+    """
+    if not location or not location.strip():
+        return None
+    loc_encoded = urllib.parse.quote(location.strip())
+    url = "https://wttr.in/{0}?format=j1".format(loc_encoded)
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "curl/7.68.0"}
+    )
+    try:
+        with _urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            cur = data.get("current_condition", [{}])[0]
+            if not cur:
+                return None
+            area_info = data.get("nearest_area", [{}])[0]
+            area = area_info.get("areaName", [{}])[0].get("value", location)
+            country = area_info.get("country", [{}])[0].get("value", "")
+            desc = cur.get("weatherDesc", [{}])[0].get("value", "").strip()
+            temp_c = cur.get("temp_C", "")
+            temp_f = cur.get("temp_F", "")
+            feels_c = cur.get("FeelsLikeC", "")
+            feels_f = cur.get("FeelsLikeF", "")
+            humidity = cur.get("humidity", "")
+            wind_kmph = cur.get("windspeedKmph", "")
+            wind_dir = cur.get("winddir16Point", "")
+
+            today_weather = data.get("weather", [{}])[0]
+            max_c = today_weather.get("maxtempC", "")
+            min_c = today_weather.get("mintempC", "")
+            max_f = today_weather.get("maxtempF", "")
+            min_f = today_weather.get("mintempF", "")
+
+            location_display = "{0}, {1}".format(area, country) if country and country != area else area
+
+            snippet_parts = []
+            if desc:
+                snippet_parts.append("Conditions: {0}".format(desc))
+            if temp_c:
+                temp_str = "Temperature: {0}°C ({1}°F)".format(temp_c, temp_f) if temp_f else "Temperature: {0}°C".format(temp_c)
+                snippet_parts.append(temp_str)
+            if feels_c:
+                feels_str = "Feels like: {0}°C ({1}°F)".format(feels_c, feels_f) if feels_f else "Feels like: {0}°C".format(feels_c)
+                snippet_parts.append(feels_str)
+            if humidity:
+                snippet_parts.append("Humidity: {0}%".format(humidity))
+            if wind_kmph:
+                snippet_parts.append("Wind: {0} km/h {1}".format(wind_kmph, wind_dir).strip())
+            if max_c and min_c:
+                snippet_parts.append("Today's forecast: High {0}°C ({1}°F), Low {2}°C ({3}°F)".format(max_c, max_f, min_c, min_f))
+
+            return {
+                "title": "Live Weather: {0}".format(location_display),
+                "snippet": ". ".join(snippet_parts) + ".",
+                "url": "https://wttr.in/{0}".format(loc_encoded)
+            }
+    except Exception as e:
+        log_error("Weather lookup failed for '{0}': {1}".format(location, e))
+        return None
+
+
 def search_web(query, num_results=3):
     """
     Performs a privacy-focused DuckDuckGo Lite search using standard Python libraries,
     returning structured web titles, snippets, and URLs.
+    Includes real-time weather integration when weather is queried.
 
     Results are cached in memory (30 min TTL) so repeat questions answer instantly
     instead of paying DNS + TLS + DuckDuckGo latency on every request.
@@ -126,6 +230,14 @@ def search_web(query, num_results=3):
         if cached and now - cached[0] < WEB_SEARCH_CACHE_TTL:
             return [dict(item) for item in cached[1][:num_results]]
 
+    results = []
+    weather_loc = extract_weather_location(query)
+    if weather_loc:
+        weather_card = fetch_weather(weather_loc, timeout=WEB_SEARCH_TIMEOUT)
+        if weather_card:
+            results.append(weather_card)
+
+    remaining = max(1, num_results - len(results))
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -137,15 +249,18 @@ def search_web(query, num_results=3):
             html = response.read().decode("utf-8", errors="ignore")
             parser = DDGLiteParser()
             parser.feed(html)
-            results = parser.results[:num_results]
-            with WEB_SEARCH_CACHE_LOCK:
-                if len(WEB_SEARCH_CACHE) > 200:
-                    WEB_SEARCH_CACHE.clear()
-                WEB_SEARCH_CACHE[cache_key] = (now, results)
-            return [dict(item) for item in results]
+            results.extend(parser.results[:remaining])
     except Exception as e:
         log_error("Web search failed for query '{0}': {1}".format(query, e))
-        return []
+
+    if results:
+        with WEB_SEARCH_CACHE_LOCK:
+            if len(WEB_SEARCH_CACHE) > 200:
+                WEB_SEARCH_CACHE.clear()
+            WEB_SEARCH_CACHE[cache_key] = (now, results)
+        return [dict(item) for item in results[:num_results]]
+
+    return []
 
 
 ACTIVE_DOWNLOADS = {}
@@ -495,7 +610,7 @@ def should_search_web(query):
         return True
 
     # Real-time entities, financial, weather, and fast-moving topics
-    if re.search(r"\b(weather|forecast|stock(\s+price)?|crypto|bitcoin|btc|eth|news|headlines?|breaking\s+news|release\s+date|changelog|patch\s+notes)\b", q):
+    if re.search(r"\b(weather|forecast|temperature|rain|raining|snow|snowing|humidity|stock(\s+price)?|crypto|bitcoin|btc|eth|news|headlines?|breaking\s+news|release\s+date|changelog|patch\s+notes)\b", q):
         return True
 
     # Dynamic roles, scores, or event outcomes
@@ -1435,7 +1550,9 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                             })
                         formatted_web = (
                             "Real-time Web Search Results:\n"
-                            "Answer the user query accurately using these search results where relevant.\n\n"
+                            "Answer the user query directly and accurately using the data provided in these search results. "
+                            "State the actual facts, figures, conditions, or answers directly rather than referring the user to visit websites or search engines. "
+                            "If the user is asking for weather or location-specific data without specifying a city, ask which city they want the forecast for.\n\n"
                         )
                         for idx, res in enumerate(search_results, 1):
                             title = res.get('title', '')

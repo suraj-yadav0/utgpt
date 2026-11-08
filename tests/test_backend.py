@@ -1029,6 +1029,95 @@ class TestPonytailBackendSimplifications(unittest.TestCase):
                 self.assertEqual("".join(received_tokens), full_text)
                 self.assertTrue(len(received_tokens) > 1)
 
+    def test_extract_weather_location(self):
+        self.assertEqual(backend.extract_weather_location("weather of London"), "London")
+        self.assertEqual(backend.extract_weather_location("what is the weather of Delhi"), "Delhi")
+        self.assertEqual(backend.extract_weather_location("tell me the weather of Paris"), "Paris")
+        self.assertEqual(backend.extract_weather_location("how is the weather in Tokyo today?"), "Tokyo")
+        self.assertEqual(backend.extract_weather_location("current weather in San Francisco right now"), "San Francisco")
+        self.assertEqual(backend.extract_weather_location("temperature in Boston"), "Boston")
+        self.assertEqual(backend.extract_weather_location("is it raining in Rome"), "Rome")
+        self.assertEqual(backend.extract_weather_location("weather Berlin"), "Berlin")
+        self.assertIsNone(backend.extract_weather_location("weather of a place"))
+        self.assertIsNone(backend.extract_weather_location("write code for weather app"))
+        self.assertIsNone(backend.extract_weather_location(""))
+        self.assertIsNone(backend.extract_weather_location(None))
+
+    def test_fetch_weather_success(self):
+        sample_json = json.dumps({
+            "current_condition": [{
+                "temp_C": "15",
+                "temp_F": "59",
+                "FeelsLikeC": "14",
+                "FeelsLikeF": "57",
+                "humidity": "65",
+                "windspeedKmph": "12",
+                "winddir16Point": "NW",
+                "weatherDesc": [{"value": "Partly cloudy"}]
+            }],
+            "nearest_area": [{
+                "areaName": [{"value": "London"}],
+                "country": [{"value": "United Kingdom"}]
+            }],
+            "weather": [{
+                "maxtempC": "18",
+                "mintempC": "10",
+                "maxtempF": "64",
+                "mintempF": "50"
+            }]
+        }).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = sample_json
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(backend, "_urlopen", return_value=mock_resp):
+            res = backend.fetch_weather("London")
+
+        self.assertIsNotNone(res)
+        self.assertEqual(res["title"], "Live Weather: London, United Kingdom")
+        self.assertIn("Conditions: Partly cloudy", res["snippet"])
+        self.assertIn("15°C (59°F)", res["snippet"])
+        self.assertIn("High 18°C", res["snippet"])
+        self.assertIn("wttr.in/London", res["url"])
+
+    def test_fetch_weather_failure(self):
+        with patch.object(backend, "_urlopen", side_effect=Exception("network timeout")):
+            res = backend.fetch_weather("London")
+        self.assertIsNone(res)
+
+    def test_search_web_integrates_weather(self):
+        sample_weather = {
+            "title": "Live Weather: Paris, France",
+            "snippet": "Conditions: Sunny. Temperature: 20°C (68°F).",
+            "url": "https://wttr.in/Paris"
+        }
+        sample_ddg_html = (
+            '<html><body>'
+            '<a class="result-link" href="https://weather.com/paris">Paris Weather</a>'
+            '<td class="result-snippet">10 day forecast</td>'
+            '</body></html>'
+        ).encode("utf-8")
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = sample_ddg_html
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = None
+
+        with patch.object(backend, "fetch_weather", return_value=sample_weather) as mock_fetch, \
+             patch.object(backend, "_urlopen", return_value=mock_resp):
+            results = backend.search_web("weather in Paris", num_results=2)
+
+        mock_fetch.assert_called_once_with("Paris", timeout=backend.WEB_SEARCH_TIMEOUT)
+        self.assertTrue(len(results) >= 1)
+        self.assertEqual(results[0]["title"], "Live Weather: Paris, France")
+        self.assertIn("Temperature: 20°C", results[0]["snippet"])
+
+    def test_should_search_web_includes_weather_and_temperature_triggers(self):
+        self.assertTrue(backend.should_search_web("temperature in Paris"))
+        self.assertTrue(backend.should_search_web("is it raining in Rome"))
+        self.assertTrue(backend.should_search_web("what is the weather of London"))
+
 
 if __name__ == "__main__":
     unittest.main()
