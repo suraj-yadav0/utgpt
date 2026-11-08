@@ -411,13 +411,41 @@ def clean_search_query(query):
     q = query.strip()
     patterns = [
         r"^(please\s+)?(can|could|would)\s+you\s+(please\s+)?(tell\s+me(\s+about)?|check(\s+for)?|search(\s+the\s+web)?(\s+for)?|find(\s+out)?|look\s+up)\s+",
-        r"^(please\s+)?(tell\s+me(\s+about)?|search(\s+the\s+web)?(\s+for)?|look\s+up|find)\s+",
+        r"^(please\s+)?(tell\s+me(\s+about)?|search(\s+for|\s+the\s+web\s+for)?|look\s+up|find)\s+",
         r"^(hey\s+|hi\s+|hello\s+)?(can\s+you\s+)?(what\s+is|what\s+are|who\s+is|where\s+is)\s+",
     ]
     for p in patterns:
         q = re.sub(p, "", q, flags=re.IGNORECASE).strip()
     q = re.sub(r"[?!.]+$", "", q).strip()
     return q if len(q) >= 2 else query.strip()
+
+
+def should_search_web(query):
+    if not query:
+        return False
+    q = query.lower().strip()
+
+    # Explicit lookup commands or URLs
+    if re.search(r"\b(search(\s+the\s+web)?|look\s+up|google|check\s+online|find\s+online)\b", q) or "http://" in q or "https://" in q or "www." in q:
+        return True
+
+    # Temporal cues indicating real-time freshness
+    if re.search(r"\b(today|yesterday|tomorrow|tonight|currently|current|latest|newest|recent|recently|upcoming|this\s+(week|month|year)|right\s+now|now)\b", q):
+        return True
+
+    # Recent and current calendar years
+    if re.search(r"\b(202[4-9]|203[0-9])\b", q):
+        return True
+
+    # Real-time entities, financial, weather, and fast-moving topics
+    if re.search(r"\b(weather|forecast|stock(\s+price)?|crypto|bitcoin|btc|eth|news|headlines?|breaking\s+news|release\s+date|changelog|patch\s+notes)\b", q):
+        return True
+
+    # Dynamic roles, scores, or event outcomes
+    if re.search(r"\b(who\s+won|score\s+of|game\s+score|standings|who\s+is\s+the\s+(current|new)?\s*(ceo|president|prime\s+minister))\b", q):
+        return True
+
+    return False
 
 
 def _emit_search_status(callback_ref, phase, query="", count=0, sources=None):
@@ -1261,9 +1289,16 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
         ctx_size = 2048
     flash_attn = str(flash_attn or "auto")
     kv_cache = str(kv_cache or "f16")
-    web_search_enabled = bool(web_search_enabled) and str(web_search_enabled).lower() not in ("false", "0")
+    web_search_val = web_search_enabled
+    web_search_str = str(web_search_val).lower().strip()
+    if web_search_str in ("auto", "smart"):
+        web_search_mode = "auto"
+    elif web_search_str in ("true", "1", "on"):
+        web_search_mode = "on"
+    else:
+        web_search_mode = "off"
 
-    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_enabled))
+    log_info("Entering run_inference with model={0}, threads={1}, ctx_size={2}, flash_attn={3}, web_search={4}".format(model_filename, threads, ctx_size, flash_attn, web_search_val))
     
     if isinstance(user_message, list) and len(user_message) > 0:
         current_query = user_message[-1].get("content", "")
@@ -1309,9 +1344,15 @@ def run_inference(model_filename, user_message, temperature, max_tokens, *args):
                 return
 
             web_context_msgs = []
-            if web_search_enabled:
+            should_search = False
+            if web_search_mode == "on":
+                should_search = True
+            elif web_search_mode == "auto":
+                should_search = should_search_web(current_query)
+
+            if should_search:
                 search_query = clean_search_query(current_query)
-                log_info("Performing web search for query: {0} (raw: {1})".format(search_query, current_query))
+                log_info("Performing web search (mode={0}) for query: {1} (raw: {2})".format(web_search_mode, search_query, current_query))
                 _emit_search_status(token_callback, "started", query=search_query)
                 try:
                     search_results = search_web(search_query, num_results=3)

@@ -62,7 +62,8 @@ MainView {
         property string flashAttn: "auto"
         property string kvCache: "f16"
         property string themeMode: "system"
-        property bool webSearchEnabled: false
+        property bool webSearchEnabled: true
+        property string webSearchMode: "auto"
         property string lastSeenVersion: ""
     }
 
@@ -81,6 +82,7 @@ MainView {
     property alias kvCache: appSettings.kvCache
     property alias themeMode: appSettings.themeMode
     property alias webSearchEnabled: appSettings.webSearchEnabled
+    property alias webSearchMode: appSettings.webSearchMode
     property string systemThemeName: ""
     property bool sidebarOpen: false
     property var modelCatalog: []
@@ -380,7 +382,9 @@ MainView {
                 flashAttn: root.flashAttn
                 kvCache: root.kvCache
                 webSearchEnabled: root.webSearchEnabled
+                webSearchMode: root.webSearchMode
                 onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
+                onWebSearchModeChanged: root.webSearchMode = webSearchMode
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
             }
 
@@ -408,6 +412,7 @@ MainView {
                 kvCache: root.kvCache
                 themeMode: root.themeMode
                 webSearchEnabled: root.webSearchEnabled
+                webSearchMode: root.webSearchMode
                 onSelectedModelChanged: root.selectedModel = selectedModel
                 onTemperatureChanged: root.temperature = temperature
                 onMaxTokensChanged: root.maxTokens = maxTokens
@@ -417,6 +422,7 @@ MainView {
                 onKvCacheChanged: root.kvCache = kvCache
                 onThemeModeChanged: root.themeMode = themeMode
                 onWebSearchEnabledChanged: root.webSearchEnabled = webSearchEnabled
+                onWebSearchModeChanged: root.webSearchMode = webSearchMode
                 onClearChat: chatPage.clearHistory()
                 onToggleSidebar: root.sidebarOpen = !root.sidebarOpen
                 onShowReleaseNotes: root.showReleaseNotes()

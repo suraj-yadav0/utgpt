@@ -77,6 +77,7 @@ Page {
     property string flashAttn: "auto"
     property string kvCache: "f16"
     property bool webSearchEnabled: false
+    property string webSearchMode: "auto"
     property string freeStorage: i18n.tr("Checking storage...")
     property var availableModels: root.availableModels
 
@@ -760,27 +761,37 @@ Page {
                         color: root.primaryTextColor
                     }
 
-                    RowLayout {
+                    Label {
+                        text: i18n.tr("Search Mode")
+                        color: root.bodyTextColor
+                        fontSize: "small"
+                    }
+
+                    StyledComboBox {
+                        id: webSearchModeSelector
                         width: parent.width
-                        spacing: units.gu(1)
-
-                        Label {
-                            text: i18n.tr("Enable Web Search by default")
-                            color: root.bodyTextColor
-                            fontSize: "small"
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
+                        model: [i18n.tr("Auto (smart detection)"), i18n.tr("Always On"), i18n.tr("Off")]
+                        currentIndex: {
+                            if (settingsPage.webSearchMode === "on") return 1;
+                            if (settingsPage.webSearchMode === "off") return 2;
+                            return 0; // "auto"
                         }
-
-                        CheckBox {
-                            checked: settingsPage.webSearchEnabled
-                            onCheckedChanged: settingsPage.webSearchEnabled = checked
-                            Layout.alignment: Qt.AlignVCenter
+                        onActivated: {
+                            if (currentIndex === 0) {
+                                settingsPage.webSearchMode = "auto"
+                                settingsPage.webSearchEnabled = true
+                            } else if (currentIndex === 1) {
+                                settingsPage.webSearchMode = "on"
+                                settingsPage.webSearchEnabled = true
+                            } else {
+                                settingsPage.webSearchMode = "off"
+                                settingsPage.webSearchEnabled = false
+                            }
                         }
                     }
 
                     Label {
-                        text: i18n.tr("Allows models to access real-time information via privacy-focused DuckDuckGo Lite search. Search snippets will be automatically injected into your prompt.")
+                        text: i18n.tr("Auto mode intelligently detects queries that need real-time data (e.g. current events, weather, latest news) and queries DuckDuckGo only when necessary, saving battery and time.")
                         color: root.tertiaryTextColor
                         fontSize: "x-small"
                         wrapMode: Text.Wrap

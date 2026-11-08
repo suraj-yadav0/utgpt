@@ -818,6 +818,66 @@ class TestPonytailBackendSimplifications(unittest.TestCase):
             sources_event = next(payload for ev, payload in events if ev == "web_search_sources")
             self.assertEqual(sources_event["sources"], [{"title": "UBports News", "url": "https://ubports.com"}])
 
+    def test_should_search_web_triggers(self):
+        self.assertTrue(backend.should_search_web("What is the latest release of Ubuntu Touch?"))
+        self.assertTrue(backend.should_search_web("What is the weather in Berlin today?"))
+        self.assertTrue(backend.should_search_web("Who won the World Series yesterday?"))
+        self.assertTrue(backend.should_search_web("What happened in 2026?"))
+        self.assertTrue(backend.should_search_web("Bitcoin price right now"))
+        self.assertTrue(backend.should_search_web("https://ubports.com news"))
+        self.assertTrue(backend.should_search_web("Search online for Lomiri updates"))
+
+    def test_should_search_web_offline_queries(self):
+        self.assertFalse(backend.should_search_web("Write a python function to sort a list"))
+        self.assertFalse(backend.should_search_web("Explain how gravity works"))
+        self.assertFalse(backend.should_search_web("Translate 'hello world' to German"))
+        self.assertFalse(backend.should_search_web("Draft an email thanking my teacher"))
+        self.assertFalse(backend.should_search_web(""))
+        self.assertFalse(backend.should_search_web(None))
+
+    def test_run_inference_auto_search_skips_offline_prompt(self):
+        events = []
+        fake_stdout = io.StringIO("Code response.")
+        mock_proc = MagicMock()
+        mock_proc.stdout = fake_stdout
+        mock_proc.stderr = io.StringIO("")
+        mock_proc.wait.return_value = 0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_file = os.path.join(tmp_dir, "m.gguf")
+            with open(model_file, "w") as f:
+                f.write("fake")
+            cli_bin = os.path.join(tmp_dir, "llama-completion")
+            with open(cli_bin, "w") as f:
+                f.write("fake")
+
+            with patch.object(backend, "get_llama_completion_path", return_value=cli_bin), \
+                 patch.object(backend, "get_llama_cli_path", return_value=cli_bin), \
+                 patch.object(backend, "is_binary_working", return_value=True), \
+                 patch.object(backend, "_ensure_models_dir", return_value=tmp_dir), \
+                 patch.object(backend, "search_web") as mock_search, \
+                 patch.object(backend, "_send_event", side_effect=lambda ev, payload: events.append((ev, payload))), \
+                 patch.object(backend.subprocess, "Popen", return_value=mock_proc):
+
+                done_ev = threading.Event()
+                backend.run_inference(
+                    "m.gguf",
+                    "Write a python function to add two numbers",
+                    0.7,
+                    50,
+                    4,
+                    2048,
+                    "off",
+                    "f16",
+                    "auto",
+                    "req-auto-1",
+                    lambda ok, err: done_ev.set()
+                )
+                self.assertTrue(done_ev.wait(timeout=3.0))
+                mock_search.assert_not_called()
+                ev_types = [ev[0] for ev in events]
+                self.assertNotIn("web_search_status", ev_types)
+
 
 if __name__ == "__main__":
     unittest.main()

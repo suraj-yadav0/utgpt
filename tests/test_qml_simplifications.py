@@ -41,6 +41,7 @@ class MainQmlSimplificationsTestCase(unittest.TestCase):
             "kvCache",
             "themeMode",
             "webSearchEnabled",
+            "webSearchMode",
         ]
         for prop in aliases:
             pattern = rf"property\s+alias\s+{prop}\s*:\s*appSettings\.{prop}"
@@ -103,6 +104,12 @@ class ChatPageSimplificationsTestCase(unittest.TestCase):
         self.assertIn("property string webSearchStatusText", self.text)
         self.assertIn("text: chatPage.webSearchStatusText", self.text)
         self.assertIn("chatPage.activeSources = data.payload.sources", self.text)
+
+    def test_web_search_3way_mode_toggle(self):
+        self.assertIn("property string webSearchMode", self.text)
+        self.assertIn('i18n.tr("Web Auto")', self.text)
+        self.assertIn('i18n.tr("Web On")', self.text)
+        self.assertIn('i18n.tr("Web Off")', self.text)
 
 
 class SettingsPageSimplificationsTestCase(unittest.TestCase):

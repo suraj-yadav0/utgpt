@@ -47,13 +47,25 @@ Page {
     property int ctxSize: 2048
     property string flashAttn: "auto"
     property string kvCache: "f16"
-    property bool webSearchEnabled: false
+    property bool webSearchEnabled: true
+    property string webSearchMode: "auto"
     property bool webSearchActive: false
     property string webSearchStatusText: i18n.tr("Searching the web for latest info...")
     property var activeSources: []
     property bool isResponding: false
     property string pendingRequestId: ""
     property bool userStopped: false
+
+    onWebSearchEnabledChanged: {
+        if (!webSearchEnabled && webSearchMode !== "off") {
+            webSearchMode = "off"
+        } else if (webSearchEnabled && webSearchMode === "off") {
+            webSearchMode = "auto"
+        }
+    }
+    onWebSearchModeChanged: {
+        webSearchEnabled = (webSearchMode !== "off")
+    }
 
     function loadHistory(sessionId) {
         if (root.debugMode) {
@@ -272,7 +284,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -320,7 +332,7 @@ Page {
 
         python.call(
             "backend.run_inference",
-            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchEnabled, pendingRequestId, pendingRequestId],
+            [model, history, temperature, maxTokens, threads, ctxSize, flashAttn, kvCache, webSearchMode, pendingRequestId, pendingRequestId],
             function(result) {
                 if (result === false && isResponding) {
                     var lastIndex = messageModel.count - 1
@@ -514,36 +526,52 @@ Page {
 
                     Rectangle {
                         id: webSearchBtn
-                        width: units.gu(7.5)
+                        width: units.gu(9.2)
                         height: units.gu(3.6)
                         radius: units.gu(1)
-                        color: chatPage.webSearchEnabled ? (root.isDark ? "#1E2D2A" : "#E6FFFA") : (root.isDark ? "#2D2D2D" : "#EDF2F7")
-                        border.color: chatPage.webSearchEnabled ? "#319795" : root.cardBorderColor
+                        color: {
+                            if (chatPage.webSearchMode === "on") return root.isDark ? "#1E2D2A" : "#E6FFFA"
+                            if (chatPage.webSearchMode === "auto") return root.isDark ? "#233330" : "#EDFAF7"
+                            return root.isDark ? "#2D2D2D" : "#EDF2F7"
+                        }
+                        border.color: chatPage.webSearchMode === "off" ? root.cardBorderColor : "#319795"
                         border.width: 1
                         Layout.alignment: Qt.AlignVCenter
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: units.gu(0.5)
+                            spacing: units.gu(0.4)
 
                             Icon {
                                 name: "stock_website"
-                                width: units.gu(1.8)
-                                height: units.gu(1.8)
-                                color: chatPage.webSearchEnabled ? "#319795" : root.secondaryTextColor
+                                width: units.gu(1.6)
+                                height: units.gu(1.6)
+                                color: chatPage.webSearchMode === "off" ? root.secondaryTextColor : "#319795"
                             }
 
                             Label {
-                                text: i18n.tr("Web")
+                                text: {
+                                    if (chatPage.webSearchMode === "on") return i18n.tr("Web On")
+                                    if (chatPage.webSearchMode === "auto") return i18n.tr("Web Auto")
+                                    return i18n.tr("Web Off")
+                                }
                                 fontSize: "x-small"
                                 font.bold: true
-                                color: chatPage.webSearchEnabled ? "#319795" : root.secondaryTextColor
+                                color: chatPage.webSearchMode === "off" ? root.secondaryTextColor : "#319795"
                             }
                         }
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: chatPage.webSearchEnabled = !chatPage.webSearchEnabled
+                            onClicked: {
+                                if (chatPage.webSearchMode === "auto") {
+                                    chatPage.webSearchMode = "on"
+                                } else if (chatPage.webSearchMode === "on") {
+                                    chatPage.webSearchMode = "off"
+                                } else {
+                                    chatPage.webSearchMode = "auto"
+                                }
+                            }
                         }
                     }
                 }
